@@ -1,0 +1,12 @@
+const sourceSets = {
+    main: {
+        java: 'src/main/java',
+        resources: 'src/main/resources'
+    },
+    test: {
+        java: 'src/test/java',
+        resources: 'src/test/resources'
+    }
+};
+
+console.log(sourceSets);
