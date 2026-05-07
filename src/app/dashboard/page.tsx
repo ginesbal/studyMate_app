@@ -30,12 +30,10 @@ import AimLogo from "@/components/layout/AimLogo";
 import { useRouter } from "next/navigation";
 import type { Task, FocusSession, UserSubject } from "@/lib/types";
 
-const FOCUS_BLOCK_MIN = 25;
-
 /* Tick the dashboard once a minute so the header date / weekday and any
-   time-of-day-derived copy ("Hit your goal by 4:30 PM", "First 25 min
-   ends at 12:50 AM") stay current when the page is left open past a
-   day or hour boundary. Cheap; the work inside is cached by useMemo. */
+   time-of-day-derived copy ("Hit your goal by 4:30 PM") stay current
+   when the page is left open across day or hour boundaries. Cheap; the
+   work inside is cached by useMemo. */
 function useMinuteTick() {
   const [, force] = useState(0);
   useEffect(() => {
@@ -44,8 +42,20 @@ function useMinuteTick() {
   }, []);
 }
 
+/* Defensive subject-label capitalization. Trusts user-entered case for
+   labels like "iOS Development" or "C# basics" but lifts the first
+   character when the entire label arrived lowercase (which happens when
+   getSubject() falls back to the raw subject key on a data mismatch). */
+function formatSubjectLabel(s: string | undefined | null) {
+  if (!s) return "study";
+  const first = s.charAt(0);
+  if (first !== first.toLowerCase()) return s;
+  return first.toUpperCase() + s.slice(1);
+}
+
 export default function DashboardPage() {
-  const { name, isFirstVisit, dailyGoal, setName } = usePreferences();
+  const { name, isFirstVisit, dailyGoal, focusBlockMin, setName } =
+    usePreferences();
   const { tasks, toggleComplete } = useTasks();
   const { todayMinutes, streak, sessions } = useFocus();
   const { getSubject } = useSubjects();
@@ -55,6 +65,18 @@ export default function DashboardPage() {
 
   const [showWelcome, setShowWelcome] = useState(isFirstVisit);
   const [welcomeName, setWelcomeName] = useState("");
+
+  // Inline undo for Mark done — capture the task at the moment of
+  // completion so the user has 5 seconds to take it back. Better than
+  // forcing them to navigate to /tasks and toggle the checkbox.
+  const [lastDone, setLastDone] = useState<{ id: string; title: string } | null>(
+    null
+  );
+  useEffect(() => {
+    if (!lastDone) return;
+    const id = setTimeout(() => setLastDone(null), 5000);
+    return () => clearTimeout(id);
+  }, [lastDone]);
 
   const firstName = name ? name.split(" ")[0] : "there";
 
@@ -196,20 +218,38 @@ export default function DashboardPage() {
       </header>
 
       {/* ── HERO — "Right now" — single dominant CTA, cream accent ── */}
-      <StickyCard accent="cream" delay={80} className="mb-6">
+      <StickyCard accent="cream" delay={80} className="mb-3">
         <HeroBody
           focusPct={focusPct}
           todayMinutes={todayMinutes}
           dailyGoal={dailyGoal}
           minutesToGoal={minutesToGoal}
+          focusBlockMin={focusBlockMin}
           nextTask={nextTask}
           subject={nextTask ? getSubject(nextTask.subject) : undefined}
           hasAnySessions={sessions.length > 0}
           onFocus={() => router.push("/focus")}
           onPlanStep={() => router.push("/tasks")}
-          onComplete={() => nextTask && toggleComplete(nextTask.id)}
+          onEditGoal={() => router.push("/settings")}
+          onComplete={() => {
+            if (!nextTask) return;
+            setLastDone({ id: nextTask.id, title: nextTask.title });
+            toggleComplete(nextTask.id);
+          }}
         />
       </StickyCard>
+
+      {/* Undo banner — slot reserved between hero and week so it never
+          shifts other layout when it appears or disappears. */}
+      <UndoSlot
+        item={lastDone}
+        onUndo={() => {
+          if (!lastDone) return;
+          toggleComplete(lastDone.id);
+          setLastDone(null);
+        }}
+        onDismiss={() => setLastDone(null)}
+      />
 
       {/* ── THIS WEEK — look-ahead + today's completed sessions, ash accent ── */}
       <StickyCard accent="ash" delay={160}>
@@ -272,27 +312,34 @@ function HeroBody({
   todayMinutes,
   dailyGoal,
   minutesToGoal,
+  focusBlockMin,
   nextTask,
   subject,
   hasAnySessions,
   onFocus,
   onPlanStep,
+  onEditGoal,
   onComplete,
 }: {
   focusPct: number;
   todayMinutes: number;
   dailyGoal: number;
   minutesToGoal: number;
+  focusBlockMin: number;
   nextTask: Task | undefined;
   subject: UserSubject | undefined;
   hasAnySessions: boolean;
   onFocus: () => void;
   onPlanStep: () => void;
+  onEditGoal: () => void;
   onComplete: () => void;
 }) {
   const isDone = focusPct >= 100;
-  const subjectLabel = subject?.label ?? nextTask?.subject ?? "study";
+  const subjectLabel = formatSubjectLabel(
+    subject?.label ?? nextTask?.subject ?? "study"
+  );
   const subjectColor = subject?.color ?? "#60729f";
+  const blockLabel = formatTime(focusBlockMin); // e.g. "25m" or "1h"
 
   // ── Branch the headline + CTA by what the student actually needs ──
   let headline: ReactNode;
@@ -327,10 +374,10 @@ function HeroBody({
       </>
     );
     sub = `${formatTime(dailyGoal)} of focus locked in today.`;
-    ctaLabel = `Start another ${FOCUS_BLOCK_MIN} min on ${subjectLabel}`;
+    ctaLabel = `Start another ${blockLabel} on ${subjectLabel}`;
     ctaAction = onFocus;
   } else if (todayMinutes === 0) {
-    const finish = projectedFinishTime(FOCUS_BLOCK_MIN);
+    const finish = projectedFinishTime(focusBlockMin);
     headline = (
       <>
         Aim for <span className="highlighter">{formatTime(dailyGoal)}</span>{" "}
@@ -339,14 +386,14 @@ function HeroBody({
     );
     sub = finish ? (
       <>
-        First {FOCUS_BLOCK_MIN} min ends at{" "}
+        First block ends at{" "}
         <span className="font-semibold tabular-nums text-baltic-700 dark:text-baltic-300">
           {finish}
         </span>
         .
       </>
     ) : null;
-    ctaLabel = `Start ${FOCUS_BLOCK_MIN} min on ${subjectLabel}`;
+    ctaLabel = `Start ${blockLabel} on ${subjectLabel}`;
     ctaAction = onFocus;
   } else {
     const finish = projectedFinishTime(minutesToGoal);
@@ -364,7 +411,7 @@ function HeroBody({
         .
       </>
     ) : null;
-    ctaLabel = `Start ${FOCUS_BLOCK_MIN} min on ${subjectLabel}`;
+    ctaLabel = `Start ${blockLabel} on ${subjectLabel}`;
     ctaAction = onFocus;
   }
 
@@ -381,21 +428,39 @@ function HeroBody({
           : "lg:grid-cols-[13rem_minmax(0,1fr)]"
       )}
     >
-      {/* COLUMN 1 — FOCUS: progress visual */}
-      <FocusTarget
-        focusPct={focusPct}
-        todayMinutes={todayMinutes}
-        dailyGoal={dailyGoal}
-      />
+      {/* COLUMN 1 — FOCUS: progress visual.
+          Order shifted on mobile so the headline lands first; the visual
+          is reinforcement, not the entry point. Desktop reading stays L→R. */}
+      <div className="order-2 lg:order-1">
+        <FocusTarget
+          focusPct={focusPct}
+          todayMinutes={todayMinutes}
+          dailyGoal={dailyGoal}
+        />
+      </div>
 
-      {/* COLUMN 2 — RIGHT NOW: headline + sub */}
-      <div className="text-center lg:text-left space-y-2">
+      {/* COLUMN 2 — RIGHT NOW: headline + sub. First on mobile. */}
+      <div className="order-1 lg:order-2 text-center lg:text-left space-y-2">
         <CardEyebrow>Right now</CardEyebrow>
         <h2 className="text-2xl font-bold text-baltic-800 dark:text-baltic-100 leading-snug">
           {headline}
         </h2>
         {sub && (
           <p className="text-sm text-steel-500 dark:text-steel-400">{sub}</p>
+        )}
+        {/* Goal edit affordance — only shown when the goal is the salient
+            number (mid-progress states). The user might wonder "where did
+            2h come from?" — this answers it without cluttering the headline. */}
+        {nextTask && !isDone && (
+          <button
+            onClick={onEditGoal}
+            className="press text-[11px] font-medium text-steel-400 dark:text-steel-500 hover:text-baltic-700 dark:hover:text-baltic-300 rounded-md py-1 px-1.5 -mx-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950"
+            style={{
+              transition: "color 160ms ease, transform 160ms var(--ease-out)",
+            }}
+          >
+            Adjust goal &rarr;
+          </button>
         )}
         {!nextTask && (
           <div className="pt-3 flex items-center gap-3 flex-wrap justify-center lg:justify-start">
@@ -416,14 +481,15 @@ function HeroBody({
         )}
       </div>
 
-      {/* COLUMN 3 — WORKING ON: task + primary action.
+      {/* COLUMN 3 — UP NEXT: task + primary action.
           Lives in the same column as the CTA so "the task you're starting"
-          and "the button that starts it" are visually linked.
+          and "the button that starts it" are visually linked. Renamed from
+          "Working on" because the user hasn't started yet — they're about to.
           Explicit margins (not space-y) so the eyebrow→title gap matches
           col 2's, then meta hugs the title, then the action breathes. */}
       {nextTask && (
-        <div className="text-center lg:text-left lg:border-l lg:border-lavender-200/60 lg:dark:border-lavender-800/60 lg:pl-7">
-          <CardEyebrow>Working on</CardEyebrow>
+        <div className="order-3 text-center lg:text-left lg:border-l lg:border-lavender-200/60 lg:dark:border-lavender-800/60 lg:pl-7">
+          <CardEyebrow>Up next</CardEyebrow>
           <p className="mt-3 text-sm font-bold text-baltic-800 dark:text-baltic-100 leading-snug line-clamp-2">
             {nextTask.title}
           </p>
@@ -731,6 +797,89 @@ function WeekEmpty({ onAdd }: { onAdd: () => void }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   UNDO SLOT — reserves a row between the hero and the week so
+   the layout stays still whether or not an undo is pending.
+   Mark done is destructive enough to deserve a 5-second window;
+   without this, accidental taps mean a navigation to /tasks to
+   re-open and toggle the checkbox.
+   ───────────────────────────────────────────────────────────── */
+
+function UndoSlot({
+  item,
+  onUndo,
+  onDismiss,
+}: {
+  item: { id: string; title: string } | null;
+  onUndo: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="min-h-[2.75rem] mb-3 flex items-center" aria-live="polite">
+      {item && (
+        <div
+          role="status"
+          className="sticky-enter w-full inline-flex items-center justify-between gap-3 px-4 py-2 rounded-full bg-baltic-700 dark:bg-baltic-800 text-white text-xs shadow-sm"
+          style={{ "--delay": "0ms" } as CSSProperties}
+        >
+          <span className="inline-flex items-center gap-2 min-w-0">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+              className="flex-shrink-0 text-cream-400"
+            >
+              <path d="M2.5 6.5l2.5 2.5L9.5 4" />
+            </svg>
+            <span className="font-semibold flex-shrink-0">Marked done.</span>
+            <span className="truncate text-white/70">{item.title}</span>
+          </span>
+          <span className="inline-flex items-center gap-1 flex-shrink-0">
+            <button
+              onClick={onUndo}
+              className="press rounded-md py-1 px-2 -my-1 text-xs font-bold text-cream-300 hover:text-cream-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cream-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-baltic-700"
+              style={{
+                transition:
+                  "color 160ms ease, transform 160ms var(--ease-out)",
+              }}
+            >
+              Undo
+            </button>
+            <button
+              onClick={onDismiss}
+              aria-label="Dismiss"
+              className="press rounded-md p-1 -m-1 text-white/60 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cream-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-baltic-700"
+              style={{
+                transition:
+                  "color 160ms ease, transform 160ms var(--ease-out)",
+              }}
+            >
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden
+              >
+                <path d="M2 2 L10 10 M10 2 L2 10" />
+              </svg>
+            </button>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
    STICKY CARD — flat panel with a thin top accent bar. The accent
    is the only color signal that distinguishes one surface from
    another; everything else stays uniform so the page reads as a
@@ -874,21 +1023,6 @@ function FocusTarget({
             className="fill-white dark:fill-baltic-900"
           />
         </svg>
-
-        <div
-          className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2"
-          style={{
-            left: `${((A_COUNTER_CX - A_VB_X) / A_VB_SIZE) * 100}%`,
-            top: `${((A_COUNTER_CY - A_VB_Y) / A_VB_SIZE) * 100}%`,
-          }}
-        >
-          <span className="text-base font-bold tabular-nums tracking-tight text-baltic-800 dark:text-baltic-100 leading-none">
-            {focusPct}
-            <span className="text-[0.65em] ml-px text-baltic-600 dark:text-baltic-400">
-              %
-            </span>
-          </span>
-        </div>
       </div>
 
       <p className="mt-4 text-xs text-steel-500 dark:text-steel-400">

@@ -7,9 +7,11 @@ import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 
 export default function SettingsPage() {
-  const { name, dailyGoal, setName, setDailyGoal } = usePreferences();
+  const { name, dailyGoal, focusBlockMin, setName, setDailyGoal, setFocusBlockMin } =
+    usePreferences();
   const [localName, setLocalName] = useState(name);
   const [localGoal, setLocalGoal] = useState(String(dailyGoal));
+  const [localBlock, setLocalBlock] = useState(String(focusBlockMin));
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   function handleSave(e: React.FormEvent) {
@@ -25,8 +27,18 @@ export default function SettingsPage() {
       setTimeout(() => setFeedback(null), 3000);
       return;
     }
+    const blockNum = parseInt(localBlock, 10);
+    if (!blockNum || blockNum < 1 || blockNum > 180) {
+      setFeedback({
+        type: "error",
+        message: "Focus block must be between 1 and 180 minutes",
+      });
+      setTimeout(() => setFeedback(null), 3000);
+      return;
+    }
     setName(localName.trim());
     setDailyGoal(goalNum);
+    setFocusBlockMin(blockNum);
     setFeedback({ type: "success", message: "Saved" });
     setTimeout(() => setFeedback(null), 2000);
   }
@@ -59,6 +71,15 @@ export default function SettingsPage() {
             value={localGoal}
             onChange={(e) => setLocalGoal(e.target.value)}
           />
+          <Input
+            id="settings-block"
+            label="Focus block length (minutes)"
+            type="number"
+            min="1"
+            max="180"
+            value={localBlock}
+            onChange={(e) => setLocalBlock(e.target.value)}
+          />
           <div className="flex items-center gap-3">
             <Button type="submit" size="sm">Save</Button>
             {feedback && (
@@ -85,6 +106,7 @@ export default function SettingsPage() {
               localStorage.removeItem("aim_sessions");
               localStorage.removeItem("aim_name");
               localStorage.removeItem("aim_daily_goal");
+              localStorage.removeItem("aim_focus_block_min");
               window.location.reload();
             }
           }}
