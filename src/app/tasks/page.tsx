@@ -170,8 +170,8 @@ export default function TasksPage() {
         </p>
       </header>
 
-      {/* ── SUBJECT FILTER — quiet horizontal strip of chips ── */}
-      <SubjectFilter
+      {/* ── SUBJECT TABS — folder-binder tabs that connect to the card ── */}
+      <SubjectTabs
         subjects={subjects}
         active={activeSubject}
         counts={stats.bySubject}
@@ -179,7 +179,8 @@ export default function TasksPage() {
         onChange={setActiveSubject}
       />
 
-      {/* ── LIST — single working surface, cream-accented ── */}
+      {/* ── LIST — single working surface, cream-accented; the active
+            subject tab merges into this card's top edge ── */}
       <StickyCard accent="cream" delay={140}>
         {/* Eyebrow row — context label, counts, status pills, new button */}
         <div className="flex items-center gap-3 mb-5 flex-wrap">
@@ -371,14 +372,18 @@ function StatusChip({ pending, overdue }: { pending: number; overdue: number }) 
 }
 
 /* ─────────────────────────────────────────────────────────────
-   SUBJECT FILTER — replaces the per-subject folder tabs with a
-   single horizontal strip of chips. Subject color shows only in
-   the dot, so the color of the surface stays uniform; the active
-   chip earns its emphasis from a thin border + soft shadow, not
-   from a tinted background.
+   SUBJECT TABS — folder-binder tabs that physically connect to
+   the StickyCard's top edge. The active tab borrows the card's
+   paper surface and lavender border so it reads as the card's
+   lid; its bottom edge dissolves into the card via a 1px overlap
+   (-mb-px). Inactive tabs sit one pixel lower with a quiet bottom
+   rule, giving the row the staggered shape of a real binder.
+   Subject color lives in the dot — and, for the active tab only,
+   in a 1px stripe at the bottom of the lid that lines up with
+   the card's cream accent like a colored signature.
    ───────────────────────────────────────────────────────────── */
 
-function SubjectFilter({
+function SubjectTabs({
   subjects,
   active,
   counts,
@@ -406,36 +411,57 @@ function SubjectFilter({
 
   return (
     <div
-      className="mb-4 sticky-enter"
+      // z-10 + -mb-px: the row sits one pixel into the card so the active
+      // tab can paint over the card's top border, dissolving the seam.
+      className="sticky-enter relative z-10 -mb-px"
       style={{ "--delay": "70ms" } as CSSProperties}
     >
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+      {/* Quiet rule along the bottom of the row that inactive tabs sit on.
+          The active tab (z-20) overlaps this rule cleanly. */}
+      <div
+        aria-hidden
+        className="absolute inset-x-0 bottom-0 h-px bg-lavender-200/60 dark:bg-lavender-800/60"
+      />
+
+      <div className="flex items-end gap-1 overflow-x-auto pt-1 px-1 -mx-1">
         {items.map((item) => {
           const isActive = item.id === active;
           return (
             <button
               key={item.id}
               onClick={() => onChange(item.id)}
+              aria-pressed={isActive}
               className={cn(
-                "press inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
+                "press relative inline-flex items-center gap-2 whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
                 isActive
-                  ? "bg-white dark:bg-lavender-900 border border-lavender-200/80 dark:border-lavender-800/60 shadow-sm text-baltic-800 dark:text-baltic-100"
-                  : "border border-transparent text-steel-500 dark:text-steel-400 hover:bg-white/60 dark:hover:bg-lavender-900/40 hover:text-baltic-700 dark:hover:text-baltic-300"
+                  ? "z-10 px-4 py-2.5 rounded-t-xl bg-white dark:bg-lavender-900 border border-b-0 border-lavender-200/60 dark:border-lavender-800/60 shadow-[0_-1px_2px_rgba(38,45,64,0.04)] dark:shadow-[0_-1px_2px_rgba(0,0,0,0.25)] text-baltic-800 dark:text-baltic-100"
+                  : "px-3 py-2 rounded-t-lg text-steel-500 dark:text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-white/55 dark:hover:bg-lavender-900/40"
               )}
               style={{
                 transition:
-                  "background-color 160ms ease, color 160ms ease, transform 160ms var(--ease-out), border-color 160ms ease",
+                  "background-color 200ms ease, color 200ms ease, transform 160ms var(--ease-out), border-color 200ms ease",
               }}
             >
               <span
                 aria-hidden
-                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                className={cn(
+                  "rounded-full flex-shrink-0",
+                  isActive ? "w-2 h-2" : "w-1.5 h-1.5"
+                )}
                 style={{
                   backgroundColor: item.color,
                   opacity: isActive ? 1 : 0.55,
+                  transition: "opacity 200ms ease, width 200ms ease, height 200ms ease",
                 }}
               />
-              <span>{item.label}</span>
+              <span
+                className={cn(
+                  "text-xs",
+                  isActive ? "font-semibold" : "font-medium"
+                )}
+              >
+                {item.label}
+              </span>
               {item.count > 0 && (
                 <span
                   className={cn(
@@ -447,6 +473,17 @@ function SubjectFilter({
                 >
                   {item.count}
                 </span>
+              )}
+
+              {/* Subject-color signature stripe along the bottom of the
+                  active tab. Sits flush with the card's cream accent so
+                  the two read as one short ribbon at the merge line. */}
+              {isActive && (
+                <span
+                  aria-hidden
+                  className="absolute inset-x-3 -bottom-px h-px"
+                  style={{ backgroundColor: item.color }}
+                />
               )}
             </button>
           );
