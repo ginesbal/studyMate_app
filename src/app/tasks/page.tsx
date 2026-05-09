@@ -103,45 +103,37 @@ export default function TasksPage() {
   // Tabs are saved views. They live in their own collection so closing
   // a tab is non-destructive — the underlying subject and its tasks
   // stay intact, the view just stops being shown.
-  const [tabs, setTabs] = useState<SubjectTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string>("");
-  const [tabsLoaded, setTabsLoaded] = useState(false);
+  //
+  // Initialise synchronously via a ref so tabs + activeTabId share the
+  // same seed (buildDefaultTabs generates fresh ids per call, so we'd
+  // otherwise risk a mismatch). The providers gate render until they're
+  // mounted, so localStorage is always available here.
+  const initialTabsRef = useRef<SubjectTab[] | null>(null);
+  if (initialTabsRef.current === null) {
+    const stored = loadStoredTabs();
+    initialTabsRef.current =
+      stored && stored.length > 0 ? stored : buildDefaultTabs(subjects);
+  }
+  const [tabs, setTabs] = useState<SubjectTab[]>(initialTabsRef.current);
+  const [activeTabId, setActiveTabId] = useState<string>(
+    initialTabsRef.current[0]?.id ?? ""
+  );
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [addModalSubject, setAddModalSubject] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showAddSubject, setShowAddSubject] = useState(false);
 
-  // Initial hydrate. Use stored tabs if any; otherwise generate one
-  // tab per existing subject + an "All" tab. Once loaded we flip
-  // tabsLoaded so the persistence effect starts saving.
+  // Persist on change. No tabsLoaded gate needed because the lazy init
+  // above guarantees `tabs` is never the placeholder `[]` when this runs.
   useEffect(() => {
-    const stored = loadStoredTabs();
-    if (stored && stored.length > 0) {
-      setTabs(stored);
-      setActiveTabId(stored[0].id);
-    } else {
-      const seeded = buildDefaultTabs(subjects);
-      setTabs(seeded);
-      setActiveTabId(seeded[0]?.id ?? "");
-    }
-    setTabsLoaded(true);
-    // Intentionally only on mount — subject migrations after that are
-    // handled by the orphan-cleanup effect below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Persist on change.
-  useEffect(() => {
-    if (!tabsLoaded) return;
     persistTabs(tabs);
-  }, [tabs, tabsLoaded]);
+  }, [tabs]);
 
   // Orphan cleanup. If a subject was deleted out from under us (e.g.
   // via Settings → Manage subjects in the future), drop any tabs
-  // pointing at it and re-pick the active tab if necessary.
+  // pointing at it.
   useEffect(() => {
-    if (!tabsLoaded) return;
     const validLabels = new Set(subjects.map((s) => s.label));
     setTabs((prev) => {
       const next = prev.filter(
@@ -149,10 +141,11 @@ export default function TasksPage() {
       );
       return next.length === prev.length ? prev : next;
     });
-  }, [subjects, tabsLoaded]);
+  }, [subjects]);
 
-  // If the active tab disappeared (cleanup or close-without-fallback),
-  // reactivate the first remaining tab.
+  // If the active tab disappeared (cleanup or a close that didn't
+  // pick a fallback because it was racing), reactivate the first
+  // remaining tab.
   useEffect(() => {
     if (tabs.length === 0) return;
     if (!tabs.some((t) => t.id === activeTabId)) {
@@ -416,10 +409,19 @@ export default function TasksPage() {
             active tab's top stripe (browser theme-line), not as a band
             across the card. ── */}
       <StickyCard topFlat delay={140}>
+        <div
+          id={TABPANEL_ID}
+          role="tabpanel"
+          aria-labelledby={TABLIST_ID}
+        >
         {/* Eyebrow row — context label, counts, status pills, new button */}
         <div className="flex items-center gap-3 mb-5 flex-wrap">
           <CardEyebrow>
-            {activeTab ? tabDisplayLabel(activeTab) : "All tasks"}
+            {activeTab && activeTab.subjectLabel === null && !activeTab.customLabel
+              ? "All tasks"
+              : activeTab
+              ? tabDisplayLabel(activeTab)
+              : "All tasks"}
           </CardEyebrow>
           <span aria-hidden className="text-steel-300 dark:text-steel-600 text-[10px]">
             ·
@@ -468,7 +470,7 @@ export default function TasksPage() {
         {filteredTasks.length === 0 ? (
           <Empty
             filterStatus={activeFilter}
-            activeSubject={activeSubjectLabel ?? "all"}
+            activeSubjectLabel={activeSubjectLabel}
             hasAnyTasks={tasks.length > 0}
             onAdd={handleNewTask}
             onShowPending={() => handleSetActiveFilter("pending")}
@@ -493,6 +495,7 @@ export default function TasksPage() {
             ))}
           </div>
         )}
+        </div>
       </StickyCard>
 
       {/* Undo banner — slot reserved so the layout stays still */}
@@ -632,15 +635,25 @@ function StatusChip({ pending, overdue }: { pending: number; overdue: number }) 
    shows as a 2px stripe along the active tab's TOP edge — same
    place a browser puts its theme color line.
 
+   Layout intentionally has NO horizontal scroll. Inactive tabs
+   flex-shrink with truncated labels — like Chrome — so the row
+   stays a glanceable strip even with many subjects. The active
+   tab is flex-shrink-0 so what you're viewing is always fully
+   readable.
+
    Affordances per tab:
    - One-click select
-   - One-click × close (undo lives in the banner below the list)
+   - One-click × close (undo lives in the banner below the list).
+     The "All" tab is the home view — not closable.
    - Double-click label → inline rename (Enter saves, Esc cancels)
 
    Trailing slot is a + that opens an anchored popover listing
    every subject (click to add a tab — duplicates allowed) with a
    "New subject…" footer that opens the existing modal.
    ───────────────────────────────────────────────────────────── */
+
+const TABLIST_ID = "tasks-tabs";
+const TABPANEL_ID = "tasks-panel";
 
 function SubjectTabs({
   tabs,
@@ -679,7 +692,12 @@ function SubjectTabs({
         className="absolute inset-x-0 bottom-0 h-px bg-lavender-200/60 dark:bg-lavender-800/60"
       />
 
-      <div className="flex items-end gap-0.5 overflow-x-auto overflow-y-visible pt-1 px-1 -mx-1">
+      <div
+        id={TABLIST_ID}
+        role="tablist"
+        aria-orientation="horizontal"
+        className="flex items-end gap-0.5 pt-1 px-1 -mx-1"
+      >
         {tabs.map((tab) => {
           const subject =
             tab.subjectLabel === null
@@ -690,6 +708,10 @@ function SubjectTabs({
             tab.subjectLabel === null
               ? totalPending
               : counts[tab.subjectLabel]?.pending ?? 0;
+          // The "All" tab is the home view — never closable. Subject
+          // tabs are always closable; even the last one of a kind, since
+          // the user can re-open from the + popover.
+          const closable = tab.subjectLabel !== null;
           return (
             <SubjectTab
               key={tab.id}
@@ -697,6 +719,8 @@ function SubjectTabs({
               color={color}
               pending={pending}
               isActive={tab.id === activeTabId}
+              closable={closable}
+              tabPanelId={TABPANEL_ID}
               onSelect={() => onSelect(tab.id)}
               onClose={() => onClose(tab.id)}
               onRename={(label) => onRename(tab.id, label)}
@@ -719,6 +743,8 @@ function SubjectTab({
   color,
   pending,
   isActive,
+  closable,
+  tabPanelId,
   onSelect,
   onClose,
   onRename,
@@ -727,6 +753,8 @@ function SubjectTab({
   color: string;
   pending: number;
   isActive: boolean;
+  closable: boolean;
+  tabPanelId: string;
   onSelect: () => void;
   onClose: () => void;
   onRename: (label: string) => void;
@@ -737,7 +765,6 @@ function SubjectTab({
 
   const displayLabel = tabDisplayLabel(tab);
 
-  // Enter edit mode at the current display label.
   const startEdit = useCallback(() => {
     setDraft(displayLabel);
     setEditing(true);
@@ -762,29 +789,27 @@ function SubjectTab({
     setDraft("");
   }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (editing) return; // input handles its own keys
-    if (e.target !== e.currentTarget) return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onSelect();
-    }
-  };
-
   return (
     <div
       role="tab"
-      tabIndex={editing ? -1 : 0}
+      tabIndex={editing ? -1 : isActive ? 0 : -1}
       aria-selected={isActive}
-      onClick={() => {
-        if (!editing) onSelect();
+      aria-controls={tabPanelId}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (editing) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
       }}
-      onKeyDown={handleKeyDown}
       className={cn(
         "press group relative inline-flex items-center gap-2 whitespace-nowrap cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
+        // Active stays full-width (always readable). Inactive flex-shrinks
+        // with a truncated label so the row never needs scroll.
         isActive
-          ? "z-10 pl-4 pr-3 py-2.5 rounded-t-xl bg-white dark:bg-lavender-900 border border-b-0 border-lavender-200/60 dark:border-lavender-800/60 shadow-[0_-1px_3px_rgba(38,45,64,0.05)] dark:shadow-[0_-1px_3px_rgba(0,0,0,0.30)] text-baltic-800 dark:text-baltic-100 overflow-hidden"
-          : "px-3 py-2 rounded-t-lg text-steel-500 dark:text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-white/55 dark:hover:bg-lavender-900/40"
+          ? "flex-shrink-0 z-10 pl-4 pr-2 py-2.5 rounded-t-xl bg-white dark:bg-lavender-900 border border-b-0 border-lavender-200/60 dark:border-lavender-800/60 text-baltic-800 dark:text-baltic-100 overflow-hidden"
+          : "min-w-[5rem] max-w-[10rem] px-3 py-2 rounded-t-lg text-steel-500 dark:text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-baltic-50/60 dark:hover:bg-baltic-900/30"
       )}
       style={{
         transition:
@@ -804,14 +829,11 @@ function SubjectTab({
 
       <span
         aria-hidden
-        className={cn(
-          "rounded-full flex-shrink-0",
-          isActive ? "w-2 h-2" : "w-1.5 h-1.5"
-        )}
+        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
         style={{
           backgroundColor: color,
           opacity: isActive ? 1 : 0.55,
-          transition: "opacity 200ms ease, width 200ms ease, height 200ms ease",
+          transition: "opacity 200ms ease",
         }}
       />
 
@@ -834,23 +856,23 @@ function SubjectTab({
           }}
           aria-label="Tab name"
           maxLength={40}
-          className="bg-transparent outline-none text-xs font-semibold text-baltic-800 dark:text-baltic-100 min-w-[2rem] w-[8ch] focus:ring-1 focus:ring-baltic-400/40 rounded-sm px-0.5"
+          className="bg-transparent outline-none text-xs font-semibold text-baltic-800 dark:text-baltic-100 min-w-[2rem] w-[10ch] focus:ring-1 focus:ring-baltic-400/40 rounded-sm px-0.5"
         />
       ) : (
         <span
           onDoubleClick={(e) => {
             e.stopPropagation();
             // Only the active tab gets quick rename — for an inactive
-            // tab the first dblclick activates it (via the click), and
-            // then double-click is "go again". We avoid surprising
-            // edits by gating rename on isActive.
+            // tab the first dblclick activates it (via the click) and
+            // the second is "go again". Gating rename on isActive
+            // avoids surprising edits.
             if (isActive) startEdit();
           }}
           className={cn(
-            "text-xs",
+            "text-xs truncate min-w-0",
             isActive ? "font-semibold" : "font-medium"
           )}
-          title={isActive ? "Double-click to rename" : undefined}
+          title={isActive ? "Double-click to rename" : displayLabel}
         >
           {displayLabel}
         </span>
@@ -859,7 +881,7 @@ function SubjectTab({
       {!editing && pending > 0 && (
         <span
           className={cn(
-            "tabular-nums text-[10px] font-mono",
+            "tabular-nums text-[10px] font-mono flex-shrink-0",
             isActive
               ? "text-baltic-500 dark:text-baltic-400"
               : "text-steel-300 dark:text-steel-600"
@@ -870,10 +892,8 @@ function SubjectTab({
       )}
 
       {/* Close — visible on active, fades in on hover for inactive.
-          One click closes; the undo banner restores at the same
-          position. The "All" tab is closable too; the page handles
-          orphan-fallback if the user closes their last tab. */}
-      {!editing && (
+          The "All" tab is non-closable (closable=false). */}
+      {!editing && closable && (
         <button
           type="button"
           onClick={(e) => {
@@ -883,7 +903,7 @@ function SubjectTab({
           onKeyDown={(e) => e.stopPropagation()}
           aria-label={`Close ${displayLabel}`}
           className={cn(
-            "press ml-0.5 -mr-1 flex items-center justify-center w-[18px] h-[18px] rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70",
+            "press flex items-center justify-center w-[18px] h-[18px] rounded-full flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70",
             isActive
               ? "text-steel-400 dark:text-steel-500 hover:bg-baltic-100 dark:hover:bg-baltic-800/60 hover:text-baltic-700 dark:hover:text-baltic-200 opacity-100"
               : "text-steel-300 dark:text-steel-600 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-baltic-100 dark:hover:bg-baltic-800/60 hover:text-baltic-700 dark:hover:text-baltic-200"
@@ -954,7 +974,7 @@ function AddTabButton({
   }, [open]);
 
   return (
-    <div ref={wrapperRef} className="relative ml-1 mb-0.5">
+    <div ref={wrapperRef} className="relative ml-1 mb-0.5 flex-shrink-0">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -966,7 +986,7 @@ function AddTabButton({
           "press inline-flex items-center justify-center w-7 h-7 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
           open
             ? "bg-white dark:bg-lavender-900 text-baltic-700 dark:text-baltic-200 shadow-sm"
-            : "text-steel-400 dark:text-steel-500 hover:text-baltic-700 dark:hover:text-baltic-200 hover:bg-white/55 dark:hover:bg-lavender-900/40"
+            : "text-steel-400 dark:text-steel-500 hover:text-baltic-700 dark:hover:text-baltic-200 hover:bg-baltic-50/60 dark:hover:bg-baltic-900/30"
         )}
         style={{
           transition:
@@ -1356,13 +1376,13 @@ function TaskRow({
 
 function Empty({
   filterStatus,
-  activeSubject,
+  activeSubjectLabel,
   hasAnyTasks,
   onAdd,
   onShowPending,
 }: {
   filterStatus: StatusFilter;
-  activeSubject: string;
+  activeSubjectLabel: string | null;
   hasAnyTasks: boolean;
   onAdd: () => void;
   onShowPending: () => void;
@@ -1375,11 +1395,11 @@ function Empty({
   } else if (filterStatus === "completed") {
     title = "Nothing finished yet.";
     sub = "Once you mark something done, it lands here.";
-  } else if (filterStatus === "all" && activeSubject !== "all") {
-    title = `No ${activeSubject} tasks.`;
+  } else if (filterStatus === "all" && activeSubjectLabel !== null) {
+    title = `No ${activeSubjectLabel} tasks.`;
     sub = "Add one to keep the subject moving.";
-  } else if (activeSubject !== "all") {
-    title = `No pending ${activeSubject} tasks.`;
+  } else if (activeSubjectLabel !== null) {
+    title = `No pending ${activeSubjectLabel} tasks.`;
     sub = "All caught up here. Switch subjects or plan ahead.";
   } else {
     title = "Caught up.";
