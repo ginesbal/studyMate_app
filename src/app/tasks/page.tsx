@@ -5,6 +5,7 @@ import {
   useMemo,
   useCallback,
   useEffect,
+  useRef,
   type CSSProperties,
   type ReactNode,
 } from "react";
@@ -22,6 +23,7 @@ import {
   dayLabel,
   getWeekday,
   getFormattedDate,
+  generateId,
 } from "@/lib/utils";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -29,20 +31,136 @@ import Modal from "@/components/ui/Modal";
 
 type StatusFilter = "pending" | "completed" | "all";
 
+/**
+ * A SubjectTab is a saved view, intentionally separate from a Subject.
+ * Closing a tab removes the view; subjects (and their tasks) are
+ * untouched. Multiple tabs can point to the same subject (with their
+ * own custom label and status filter) so a student can keep, say, an
+ * "Algebra — exam prep" tab and an "Algebra — daily" tab side by side.
+ */
+interface SubjectTab {
+  id: string;
+  /** null = the "All" view; otherwise the subject's label */
+  subjectLabel: string | null;
+  /** null = use the subject's label (or "All") */
+  customLabel: string | null;
+  statusFilter: StatusFilter;
+}
+
+const TABS_STORAGE_KEY = "aim_tabs";
+const ALL_TAB_LABEL = "All";
+
+function loadStoredTabs(): SubjectTab[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(TABS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed as SubjectTab[];
+  } catch {
+    return null;
+  }
+}
+
+function persistTabs(tabs: SubjectTab[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(tabs));
+  } catch {
+    /* quota / privacy mode — accept the loss */
+  }
+}
+
+function buildDefaultTabs(subjects: UserSubject[]): SubjectTab[] {
+  return [
+    {
+      id: generateId(),
+      subjectLabel: null,
+      customLabel: null,
+      statusFilter: "pending",
+    },
+    ...subjects.map((s) => ({
+      id: generateId(),
+      subjectLabel: s.label,
+      customLabel: null,
+      statusFilter: "pending" as const,
+    })),
+  ];
+}
+
+function tabDisplayLabel(tab: SubjectTab): string {
+  if (tab.customLabel && tab.customLabel.trim().length > 0) {
+    return tab.customLabel;
+  }
+  return tab.subjectLabel ?? ALL_TAB_LABEL;
+}
+
 export default function TasksPage() {
   const { tasks, addTask, toggleComplete, deleteTask } = useTasks();
-  const { subjects, getSubject, addSubject, deleteSubject } = useSubjects();
+  const { subjects, getSubject, addSubject } = useSubjects();
 
-  const [activeSubject, setActiveSubject] = useState<string>("all");
-  const [filterStatus, setFilterStatus] = useState<StatusFilter>("pending");
+  // Tabs are saved views. They live in their own collection so closing
+  // a tab is non-destructive — the underlying subject and its tasks
+  // stay intact, the view just stops being shown.
+  const [tabs, setTabs] = useState<SubjectTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string>("");
+  const [tabsLoaded, setTabsLoaded] = useState(false);
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [addModalSubject, setAddModalSubject] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showAddSubject, setShowAddSubject] = useState(false);
 
-  // Inline undo for Mark done — capture the task at the moment of completion
-  // so an accidental checkbox tap is recoverable. Mirrors the dashboard's
-  // pattern so the experience is consistent across the app.
+  // Initial hydrate. Use stored tabs if any; otherwise generate one
+  // tab per existing subject + an "All" tab. Once loaded we flip
+  // tabsLoaded so the persistence effect starts saving.
+  useEffect(() => {
+    const stored = loadStoredTabs();
+    if (stored && stored.length > 0) {
+      setTabs(stored);
+      setActiveTabId(stored[0].id);
+    } else {
+      const seeded = buildDefaultTabs(subjects);
+      setTabs(seeded);
+      setActiveTabId(seeded[0]?.id ?? "");
+    }
+    setTabsLoaded(true);
+    // Intentionally only on mount — subject migrations after that are
+    // handled by the orphan-cleanup effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist on change.
+  useEffect(() => {
+    if (!tabsLoaded) return;
+    persistTabs(tabs);
+  }, [tabs, tabsLoaded]);
+
+  // Orphan cleanup. If a subject was deleted out from under us (e.g.
+  // via Settings → Manage subjects in the future), drop any tabs
+  // pointing at it and re-pick the active tab if necessary.
+  useEffect(() => {
+    if (!tabsLoaded) return;
+    const validLabels = new Set(subjects.map((s) => s.label));
+    setTabs((prev) => {
+      const next = prev.filter(
+        (t) => t.subjectLabel === null || validLabels.has(t.subjectLabel)
+      );
+      return next.length === prev.length ? prev : next;
+    });
+  }, [subjects, tabsLoaded]);
+
+  // If the active tab disappeared (cleanup or close-without-fallback),
+  // reactivate the first remaining tab.
+  useEffect(() => {
+    if (tabs.length === 0) return;
+    if (!tabs.some((t) => t.id === activeTabId)) {
+      setActiveTabId(tabs[0].id);
+    }
+  }, [tabs, activeTabId]);
+
+  // Inline undo for Mark done.
   const [lastDone, setLastDone] = useState<{ id: string; title: string } | null>(null);
   useEffect(() => {
     if (!lastDone) return;
@@ -50,31 +168,84 @@ export default function TasksPage() {
     return () => clearTimeout(id);
   }, [lastDone]);
 
-  // Inline undo for closing a subject tab. Browser-tab close is one-click;
-  // the tasks tied to the subject keep their data but lose their color
-  // label until undo restores the subject (or the user re-creates it).
-  const [lastClosedSubject, setLastClosedSubject] = useState<UserSubject | null>(null);
+  // Inline undo for closing a tab. Captures the position too so undo
+  // restores the tab in its original spot, not at the end.
+  const [lastClosedTab, setLastClosedTab] = useState<{
+    tab: SubjectTab;
+    position: number;
+  } | null>(null);
   useEffect(() => {
-    if (!lastClosedSubject) return;
-    const id = setTimeout(() => setLastClosedSubject(null), 5000);
+    if (!lastClosedTab) return;
+    const id = setTimeout(() => setLastClosedTab(null), 5000);
     return () => clearTimeout(id);
-  }, [lastClosedSubject]);
+  }, [lastClosedTab]);
 
-  const handleCloseSubject = useCallback(
-    (subject: UserSubject) => {
-      deleteSubject(subject.id);
-      setLastClosedSubject(subject);
-      // Drop back to "All" if the user just closed the active tab.
-      setActiveSubject((prev) => (prev === subject.label ? "all" : prev));
+  // ── Tab operations ────────────────────────────────────────
+
+  const handleAddTabForSubject = useCallback(
+    (subjectLabel: string | null) => {
+      const newTab: SubjectTab = {
+        id: generateId(),
+        subjectLabel,
+        customLabel: null,
+        statusFilter: "pending",
+      };
+      setTabs((prev) => [...prev, newTab]);
+      setActiveTabId(newTab.id);
     },
-    [deleteSubject]
+    []
   );
 
-  const handleUndoCloseSubject = useCallback(() => {
-    if (!lastClosedSubject) return;
-    addSubject(lastClosedSubject.label, lastClosedSubject.color);
-    setLastClosedSubject(null);
-  }, [lastClosedSubject, addSubject]);
+  const handleCloseTab = useCallback(
+    (tabId: string) => {
+      const idx = tabs.findIndex((t) => t.id === tabId);
+      if (idx === -1) return;
+      const closed = tabs[idx];
+      const next = tabs.filter((t) => t.id !== tabId);
+      setTabs(next);
+      setLastClosedTab({ tab: closed, position: idx });
+      // If we closed the active tab, fall back to the neighbour at the
+      // same index (or the last remaining tab if we just removed the
+      // tail). Browsers do the same.
+      if (activeTabId === tabId && next.length > 0) {
+        const fallback = next[Math.min(idx, next.length - 1)] ?? next[0];
+        setActiveTabId(fallback.id);
+      }
+    },
+    [tabs, activeTabId]
+  );
+
+  const handleUndoCloseTab = useCallback(() => {
+    if (!lastClosedTab) return;
+    const { tab, position } = lastClosedTab;
+    setTabs((prev) => {
+      const next = [...prev];
+      next.splice(Math.min(position, next.length), 0, tab);
+      return next;
+    });
+    setActiveTabId(tab.id);
+    setLastClosedTab(null);
+  }, [lastClosedTab]);
+
+  const handleRenameTab = useCallback((tabId: string, label: string) => {
+    const trimmed = label.trim();
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === tabId ? { ...t, customLabel: trimmed.length > 0 ? trimmed : null } : t
+      )
+    );
+  }, []);
+
+  const handleSetActiveFilter = useCallback(
+    (filter: StatusFilter) => {
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === activeTabId ? { ...t, statusFilter: filter } : t
+        )
+      );
+    },
+    [activeTabId]
+  );
 
   const handleCreateSubject = useCallback(
     (label: string, color: string) => {
@@ -86,11 +257,17 @@ export default function TasksPage() {
         return;
       }
       addSubject(trimmed, color);
-      setActiveSubject(trimmed);
+      handleAddTabForSubject(trimmed);
       setShowAddSubject(false);
     },
-    [subjects, addSubject]
+    [subjects, addSubject, handleAddTabForSubject]
   );
+
+  // ── Derived state from active tab ─────────────────────────
+
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? null;
+  const activeSubjectLabel = activeTab?.subjectLabel ?? null;
+  const activeFilter: StatusFilter = activeTab?.statusFilter ?? "pending";
 
   // Counts per subject + globally. One pass so we don't reduce twice.
   const stats = useMemo(() => {
@@ -117,9 +294,9 @@ export default function TasksPage() {
   }, [tasks, subjects]);
 
   const currentStats =
-    activeSubject === "all"
+    activeSubjectLabel === null
       ? stats.all
-      : stats.bySubject[activeSubject] || {
+      : stats.bySubject[activeSubjectLabel] || {
           pending: 0,
           completed: 0,
           overdue: 0,
@@ -128,12 +305,12 @@ export default function TasksPage() {
 
   const filteredTasks = useMemo(() => {
     let result = tasks;
-    if (activeSubject !== "all") {
-      result = result.filter((t) => t.subject === activeSubject);
+    if (activeSubjectLabel !== null) {
+      result = result.filter((t) => t.subject === activeSubjectLabel);
     }
-    if (filterStatus === "pending") {
+    if (activeFilter === "pending") {
       result = result.filter((t) => !t.completed);
-    } else if (filterStatus === "completed") {
+    } else if (activeFilter === "completed") {
       result = result.filter((t) => t.completed);
     }
     return [...result].sort((a, b) => {
@@ -143,7 +320,7 @@ export default function TasksPage() {
       if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
     });
-  }, [tasks, activeSubject, filterStatus]);
+  }, [tasks, activeSubjectLabel, activeFilter]);
 
   // Group tasks by day-bucket. Overdue floats to top; completed sinks to
   // bottom. Within a bucket we keep the existing sort (priority/due).
@@ -174,9 +351,9 @@ export default function TasksPage() {
   }, [filteredTasks]);
 
   const handleNewTask = useCallback(() => {
-    setAddModalSubject(activeSubject !== "all" ? activeSubject : null);
+    setAddModalSubject(activeSubjectLabel);
     setShowAddModal(true);
-  }, [activeSubject]);
+  }, [activeSubjectLabel]);
 
   return (
     <div className="desk-surface relative -mx-8 px-8 -mt-2 pt-2 pb-6">
@@ -218,16 +395,20 @@ export default function TasksPage() {
         </p>
       </header>
 
-      {/* ── SUBJECT TABS — browser-style binder tabs that connect to the
-            card. Each tab closes with one click; the + opens "New subject". ── */}
+      {/* ── SUBJECT TABS — browser-style. Each tab is an independent
+            view; closing one is non-destructive (subjects/tasks survive),
+            so accidental close + the 5s undo banner is total recovery. ── */}
       <SubjectTabs
+        tabs={tabs}
+        activeTabId={activeTab?.id ?? ""}
         subjects={subjects}
-        active={activeSubject}
         counts={stats.bySubject}
         totalPending={stats.all.pending}
-        onChange={setActiveSubject}
-        onClose={handleCloseSubject}
-        onAdd={() => setShowAddSubject(true)}
+        onSelect={setActiveTabId}
+        onClose={handleCloseTab}
+        onRename={handleRenameTab}
+        onAddTabForSubject={handleAddTabForSubject}
+        onCreateNewSubject={() => setShowAddSubject(true)}
       />
 
       {/* ── LIST — paper surface, top corners squared so the tabs above
@@ -238,7 +419,7 @@ export default function TasksPage() {
         {/* Eyebrow row — context label, counts, status pills, new button */}
         <div className="flex items-center gap-3 mb-5 flex-wrap">
           <CardEyebrow>
-            {activeSubject === "all" ? "All tasks" : activeSubject}
+            {activeTab ? tabDisplayLabel(activeTab) : "All tasks"}
           </CardEyebrow>
           <span aria-hidden className="text-steel-300 dark:text-steel-600 text-[10px]">
             ·
@@ -255,7 +436,10 @@ export default function TasksPage() {
             )}
           </span>
           <div className="ml-auto flex items-center gap-2">
-            <StatusFilterPills value={filterStatus} onChange={setFilterStatus} />
+            <StatusFilterPills
+              value={activeFilter}
+              onChange={handleSetActiveFilter}
+            />
             <button
               onClick={handleNewTask}
               className="press inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-baltic-700 dark:bg-baltic-500 text-white text-[11px] font-semibold hover:bg-baltic-800 dark:hover:bg-baltic-400 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950"
@@ -283,11 +467,11 @@ export default function TasksPage() {
 
         {filteredTasks.length === 0 ? (
           <Empty
-            filterStatus={filterStatus}
-            activeSubject={activeSubject}
+            filterStatus={activeFilter}
+            activeSubject={activeSubjectLabel ?? "all"}
             hasAnyTasks={tasks.length > 0}
             onAdd={handleNewTask}
-            onShowPending={() => setFilterStatus("pending")}
+            onShowPending={() => handleSetActiveFilter("pending")}
           />
         ) : (
           <div className="space-y-6">
@@ -296,7 +480,7 @@ export default function TasksPage() {
                 key={g.label}
                 label={g.label}
                 tasks={g.tasks}
-                showSubject={activeSubject === "all"}
+                showSubject={activeSubjectLabel === null}
                 getSubject={getSubject}
                 onSelect={setSelectedTask}
                 onComplete={(id, title) => {
@@ -322,12 +506,13 @@ export default function TasksPage() {
         onDismiss={() => setLastDone(null)}
       />
 
-      {/* Subject-close undo — separate slot so it stacks naturally with
-          the task-completion undo if both fire in quick succession. */}
-      <SubjectUndoSlot
-        subject={lastClosedSubject}
-        onUndo={handleUndoCloseSubject}
-        onDismiss={() => setLastClosedSubject(null)}
+      {/* Tab-close undo — restores the closed tab at its original
+          position so the row order is preserved. */}
+      <CloseTabUndoSlot
+        item={lastClosedTab}
+        getSubject={getSubject}
+        onUndo={handleUndoCloseTab}
+        onDismiss={() => setLastClosedTab(null)}
       />
 
       {/* Modals */}
@@ -440,56 +625,46 @@ function StatusChip({ pending, overdue }: { pending: number; overdue: number }) 
 }
 
 /* ─────────────────────────────────────────────────────────────
-   SUBJECT TABS — browser-style binder tabs that physically merge
-   into the StickyCard below. The wrapper sits one pixel into the
-   card (-mb-px, z-10) so the active tab paints over the card's
-   top border and the seam disappears. Subject color shows as a
-   2px stripe along the active tab's TOP edge — the same place a
-   browser puts its theme color line.
+   SUBJECT TABS — browser-style. Tabs are saved views (separate
+   from subjects), so closing one is non-destructive and adding
+   the same subject twice is allowed. The active tab merges into
+   the card via a 1px overlap (z-10 + -mb-px). Subject color
+   shows as a 2px stripe along the active tab's TOP edge — same
+   place a browser puts its theme color line.
 
-   Each subject tab carries a one-click × close affordance; the
-   final slot is a + button that opens the New subject modal.
+   Affordances per tab:
+   - One-click select
+   - One-click × close (undo lives in the banner below the list)
+   - Double-click label → inline rename (Enter saves, Esc cancels)
+
+   Trailing slot is a + that opens an anchored popover listing
+   every subject (click to add a tab — duplicates allowed) with a
+   "New subject…" footer that opens the existing modal.
    ───────────────────────────────────────────────────────────── */
 
-interface TabItem {
-  id: string;
-  label: string;
-  color: string;
-  count: number;
-  raw?: UserSubject;
-}
-
 function SubjectTabs({
+  tabs,
+  activeTabId,
   subjects,
-  active,
   counts,
   totalPending,
-  onChange,
+  onSelect,
   onClose,
-  onAdd,
+  onRename,
+  onAddTabForSubject,
+  onCreateNewSubject,
 }: {
+  tabs: SubjectTab[];
+  activeTabId: string;
   subjects: UserSubject[];
-  active: string;
   counts: Record<string, { pending: number }>;
   totalPending: number;
-  onChange: (id: string) => void;
-  onClose: (subject: UserSubject) => void;
-  onAdd: () => void;
+  onSelect: (tabId: string) => void;
+  onClose: (tabId: string) => void;
+  onRename: (tabId: string, label: string) => void;
+  onAddTabForSubject: (subjectLabel: string | null) => void;
+  onCreateNewSubject: () => void;
 }) {
-  const items: TabItem[] = useMemo(
-    () => [
-      { id: "all", label: "All", color: "#9faac6", count: totalPending },
-      ...subjects.map((s) => ({
-        id: s.label,
-        label: s.label,
-        color: s.color,
-        count: counts[s.label]?.pending ?? 0,
-        raw: s,
-      })),
-    ],
-    [subjects, totalPending, counts]
-  );
-
   return (
     <div
       // z-10 + -mb-px: the row sits one pixel into the card so the active
@@ -504,35 +679,91 @@ function SubjectTabs({
         className="absolute inset-x-0 bottom-0 h-px bg-lavender-200/60 dark:bg-lavender-800/60"
       />
 
-      <div className="flex items-end gap-0.5 overflow-x-auto pt-1 px-1 -mx-1">
-        {items.map((item) => (
-          <SubjectTab
-            key={item.id}
-            item={item}
-            isActive={item.id === active}
-            onSelect={() => onChange(item.id)}
-            onClose={item.raw ? () => onClose(item.raw!) : undefined}
-          />
-        ))}
+      <div className="flex items-end gap-0.5 overflow-x-auto overflow-y-visible pt-1 px-1 -mx-1">
+        {tabs.map((tab) => {
+          const subject =
+            tab.subjectLabel === null
+              ? null
+              : subjects.find((s) => s.label === tab.subjectLabel) ?? null;
+          const color = subject?.color ?? "#9faac6";
+          const pending =
+            tab.subjectLabel === null
+              ? totalPending
+              : counts[tab.subjectLabel]?.pending ?? 0;
+          return (
+            <SubjectTab
+              key={tab.id}
+              tab={tab}
+              color={color}
+              pending={pending}
+              isActive={tab.id === activeTabId}
+              onSelect={() => onSelect(tab.id)}
+              onClose={() => onClose(tab.id)}
+              onRename={(label) => onRename(tab.id, label)}
+            />
+          );
+        })}
 
-        <AddSubjectButton onClick={onAdd} />
+        <AddTabButton
+          subjects={subjects}
+          onAddTabForSubject={onAddTabForSubject}
+          onCreateNewSubject={onCreateNewSubject}
+        />
       </div>
     </div>
   );
 }
 
 function SubjectTab({
-  item,
+  tab,
+  color,
+  pending,
   isActive,
   onSelect,
   onClose,
+  onRename,
 }: {
-  item: TabItem;
+  tab: SubjectTab;
+  color: string;
+  pending: number;
   isActive: boolean;
   onSelect: () => void;
-  onClose?: () => void;
+  onClose: () => void;
+  onRename: (label: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const displayLabel = tabDisplayLabel(tab);
+
+  // Enter edit mode at the current display label.
+  const startEdit = useCallback(() => {
+    setDraft(displayLabel);
+    setEditing(true);
+  }, [displayLabel]);
+
+  // Focus + select input contents once it mounts.
+  useEffect(() => {
+    if (!editing) return;
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [editing]);
+
+  const commit = useCallback(() => {
+    onRename(draft);
+    setEditing(false);
+  }, [draft, onRename]);
+
+  const cancel = useCallback(() => {
+    setEditing(false);
+    setDraft("");
+  }, []);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (editing) return; // input handles its own keys
     if (e.target !== e.currentTarget) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -543,9 +774,11 @@ function SubjectTab({
   return (
     <div
       role="tab"
-      tabIndex={0}
+      tabIndex={editing ? -1 : 0}
       aria-selected={isActive}
-      onClick={onSelect}
+      onClick={() => {
+        if (!editing) onSelect();
+      }}
       onKeyDown={handleKeyDown}
       className={cn(
         "press group relative inline-flex items-center gap-2 whitespace-nowrap cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
@@ -565,7 +798,7 @@ function SubjectTab({
         <span
           aria-hidden
           className="absolute inset-x-0 top-0 h-[2px]"
-          style={{ backgroundColor: item.color }}
+          style={{ backgroundColor: color }}
         />
       )}
 
@@ -576,20 +809,54 @@ function SubjectTab({
           isActive ? "w-2 h-2" : "w-1.5 h-1.5"
         )}
         style={{
-          backgroundColor: item.color,
+          backgroundColor: color,
           opacity: isActive ? 1 : 0.55,
           transition: "opacity 200ms ease, width 200ms ease, height 200ms ease",
         }}
       />
-      <span
-        className={cn(
-          "text-xs",
-          isActive ? "font-semibold" : "font-medium"
-        )}
-      >
-        {item.label}
-      </span>
-      {item.count > 0 && (
+
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              cancel();
+            }
+          }}
+          aria-label="Tab name"
+          maxLength={40}
+          className="bg-transparent outline-none text-xs font-semibold text-baltic-800 dark:text-baltic-100 min-w-[2rem] w-[8ch] focus:ring-1 focus:ring-baltic-400/40 rounded-sm px-0.5"
+        />
+      ) : (
+        <span
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            // Only the active tab gets quick rename — for an inactive
+            // tab the first dblclick activates it (via the click), and
+            // then double-click is "go again". We avoid surprising
+            // edits by gating rename on isActive.
+            if (isActive) startEdit();
+          }}
+          className={cn(
+            "text-xs",
+            isActive ? "font-semibold" : "font-medium"
+          )}
+          title={isActive ? "Double-click to rename" : undefined}
+        >
+          {displayLabel}
+        </span>
+      )}
+
+      {!editing && pending > 0 && (
         <span
           className={cn(
             "tabular-nums text-[10px] font-mono",
@@ -598,13 +865,15 @@ function SubjectTab({
               : "text-steel-300 dark:text-steel-600"
           )}
         >
-          {item.count}
+          {pending}
         </span>
       )}
 
-      {/* Close affordance — visible on the active tab and on hover.
-          One-click; recovery is the undo banner below the list. */}
-      {onClose && (
+      {/* Close — visible on active, fades in on hover for inactive.
+          One click closes; the undo banner restores at the same
+          position. The "All" tab is closable too; the page handles
+          orphan-fallback if the user closes their last tab. */}
+      {!editing && (
         <button
           type="button"
           onClick={(e) => {
@@ -612,7 +881,7 @@ function SubjectTab({
             onClose();
           }}
           onKeyDown={(e) => e.stopPropagation()}
-          aria-label={`Close ${item.label}`}
+          aria-label={`Close ${displayLabel}`}
           className={cn(
             "press ml-0.5 -mr-1 flex items-center justify-center w-[18px] h-[18px] rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70",
             isActive
@@ -642,32 +911,161 @@ function SubjectTab({
   );
 }
 
-function AddSubjectButton({ onClick }: { onClick: () => void }) {
+/* ─────────────────────────────────────────────────────────────
+   ADD-TAB BUTTON + POPOVER — anchored dropdown. Lists every
+   subject (with its color dot); click a subject to add a tab
+   for it (duplicates allowed). Footer is "New subject…" which
+   opens the existing creation modal. Closes on outside click
+   or Escape so the popover never gets stuck.
+   ───────────────────────────────────────────────────────────── */
+
+function AddTabButton({
+  subjects,
+  onAddTabForSubject,
+  onCreateNewSubject,
+}: {
+  subjects: UserSubject[];
+  onAddTabForSubject: (subjectLabel: string | null) => void;
+  onCreateNewSubject: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click + Escape.
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label="New subject"
-      title="New subject"
-      className="press relative ml-1 inline-flex items-center justify-center w-7 h-7 mb-0.5 rounded-md text-steel-400 dark:text-steel-500 hover:text-baltic-700 dark:hover:text-baltic-200 hover:bg-white/55 dark:hover:bg-lavender-900/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950"
-      style={{
-        transition:
-          "background-color 160ms ease, color 160ms ease, transform 160ms var(--ease-out)",
-      }}
-    >
-      <svg
-        width="12"
-        height="12"
-        viewBox="0 0 12 12"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        aria-hidden
+    <div ref={wrapperRef} className="relative ml-1 mb-0.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Add tab"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        title="Add tab"
+        className={cn(
+          "press inline-flex items-center justify-center w-7 h-7 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
+          open
+            ? "bg-white dark:bg-lavender-900 text-baltic-700 dark:text-baltic-200 shadow-sm"
+            : "text-steel-400 dark:text-steel-500 hover:text-baltic-700 dark:hover:text-baltic-200 hover:bg-white/55 dark:hover:bg-lavender-900/40"
+        )}
+        style={{
+          transition:
+            "background-color 160ms ease, color 160ms ease, transform 160ms var(--ease-out)",
+        }}
       >
-        <path d="M6 2v8M2 6h8" />
-      </svg>
-    </button>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          aria-hidden
+        >
+          <path d="M6 2v8M2 6h8" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="dropdown-enter absolute left-0 top-full mt-1.5 w-60 rounded-xl border border-lavender-200/80 dark:border-lavender-800/70 bg-white dark:bg-lavender-900 shadow-[0_10px_28px_-12px_rgba(38,45,64,0.18),0_4px_10px_-4px_rgba(38,45,64,0.10)] dark:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.55)] overflow-hidden z-50"
+        >
+          <div className="px-3 pt-2.5 pb-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-steel-500 dark:text-steel-400">
+              Add tab for
+            </p>
+          </div>
+          <ul className="max-h-64 overflow-y-auto pb-1">
+            {subjects.length === 0 ? (
+              <li className="px-3 py-2 text-xs text-steel-400 dark:text-steel-500">
+                No subjects yet.
+              </li>
+            ) : (
+              subjects.map((s) => (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onAddTabForSubject(s.label);
+                      setOpen(false);
+                    }}
+                    className="press w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-lavender-50 dark:hover:bg-lavender-800/60 focus:outline-none focus:bg-lavender-50 dark:focus:bg-lavender-800/60"
+                    style={{
+                      transition:
+                        "background-color 160ms ease, transform 160ms var(--ease-out)",
+                    }}
+                  >
+                    <span
+                      aria-hidden
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: s.color }}
+                    />
+                    <span className="text-xs font-medium text-baltic-700 dark:text-baltic-300 truncate">
+                      {s.label}
+                    </span>
+                    <span className="ml-auto text-[10px] font-mono text-steel-300 dark:text-steel-600">
+                      tab
+                    </span>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+          <div className="border-t border-lavender-100 dark:border-lavender-800/60">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onCreateNewSubject();
+                setOpen(false);
+              }}
+              className="press w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-baltic-700 dark:text-baltic-300 hover:bg-lavender-50 dark:hover:bg-lavender-800/60 focus:outline-none focus:bg-lavender-50 dark:focus:bg-lavender-800/60"
+              style={{
+                transition:
+                  "background-color 160ms ease, transform 160ms var(--ease-out)",
+              }}
+            >
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                aria-hidden
+              >
+                <path d="M6 2v8M2 6h8" />
+              </svg>
+              New subject…
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1122,24 +1520,35 @@ function UndoSlot({
 }
 
 /* ─────────────────────────────────────────────────────────────
-   SUBJECT UNDO SLOT — companion to UndoSlot. Closing a tab is
-   one-click; this banner gives the user 5 seconds to take it
-   back, reusing the dashboard's banner shape so both kinds of
-   undo feel like one mechanism.
+   CLOSE-TAB UNDO SLOT — companion to UndoSlot. Closing a tab is
+   one-click and non-destructive; this banner gives 5 seconds to
+   restore the tab at its original index. We resolve the subject
+   color from the live subjects list so the banner dot matches
+   what the tab will look like once it returns.
    ───────────────────────────────────────────────────────────── */
 
-function SubjectUndoSlot({
-  subject,
+function CloseTabUndoSlot({
+  item,
+  getSubject,
   onUndo,
   onDismiss,
 }: {
-  subject: UserSubject | null;
+  item: { tab: SubjectTab; position: number } | null;
+  getSubject: (idOrLabel: string) => UserSubject | undefined;
   onUndo: () => void;
   onDismiss: () => void;
 }) {
+  const dot =
+    item === null
+      ? "#9faac6"
+      : item.tab.subjectLabel === null
+      ? "#9faac6"
+      : getSubject(item.tab.subjectLabel)?.color ?? "#9faac6";
+  const label = item ? tabDisplayLabel(item.tab) : "";
+
   return (
     <div className="min-h-[2.75rem] mt-2 flex items-center" aria-live="polite">
-      {subject && (
+      {item && (
         <div
           role="status"
           className="sticky-enter w-full inline-flex items-center justify-between gap-3 px-4 py-2 rounded-full bg-baltic-700 dark:bg-baltic-800 text-white text-xs shadow-sm"
@@ -1149,10 +1558,10 @@ function SubjectUndoSlot({
             <span
               aria-hidden
               className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{ backgroundColor: subject.color }}
+              style={{ backgroundColor: dot }}
             />
-            <span className="font-semibold flex-shrink-0">Closed.</span>
-            <span className="truncate text-white/70">{subject.label}</span>
+            <span className="font-semibold flex-shrink-0">Tab closed.</span>
+            <span className="truncate text-white/70">{label}</span>
           </span>
           <span className="inline-flex items-center gap-1 flex-shrink-0">
             <button
