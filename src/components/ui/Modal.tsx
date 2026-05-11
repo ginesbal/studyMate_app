@@ -50,12 +50,12 @@ export default function Modal({
       }}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-baltic-950/30 dark:bg-black/50 backdrop-blur-sm" />
+      <div className="modal-backdrop-enter absolute inset-0 bg-baltic-950/30 dark:bg-black/50 backdrop-blur-sm" />
 
       {/* Panel */}
       <div
         className={cn(
-          "relative bg-white dark:bg-lavender-900 rounded-2xl shadow-lg p-6",
+          "modal-panel-enter relative bg-white dark:bg-lavender-900 rounded-2xl shadow-lg p-6",
           width === "sm" && "w-full max-w-sm",
           width === "md" && "w-full max-w-lg",
           width === "lg" && "w-full max-w-2xl",

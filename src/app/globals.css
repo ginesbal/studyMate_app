@@ -233,6 +233,34 @@
     transform-origin: top center;
   }
 
+  /* Modal entrance — backdrop fades, panel scales-from-0.96 (never from 0,
+     per Emil's "nothing in the real world appears from nothing" rule).
+     Center-origin: a modal isn't anchored to a trigger, it owns the viewport. */
+  @keyframes modal-backdrop-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @keyframes modal-panel-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .modal-backdrop-enter {
+    animation: modal-backdrop-in 180ms ease-out;
+  }
+
+  .modal-panel-enter {
+    animation: modal-panel-in 220ms var(--ease-out);
+    transform-origin: center;
+  }
+
   /* ────────────────────────────────────────────────────────
      Student-vibe primitives — sticky notes, tape, doodles
      ──────────────────────────────────────────────────────── */
@@ -431,7 +459,10 @@
     .doodle-draw polyline,
     .float-slow,
     .float-medium,
-    .progress-ring-circle {
+    .progress-ring-circle,
+    .dropdown-enter,
+    .modal-backdrop-enter,
+    .modal-panel-enter {
       animation: none !important;
     }
     .paper-card {

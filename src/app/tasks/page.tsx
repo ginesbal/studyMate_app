@@ -50,6 +50,59 @@ interface SubjectTab {
 
 const TABS_STORAGE_KEY = "aim_tabs";
 const ALL_TAB_LABEL = "All";
+const UNDO_TIMEOUT_MS = 5000;
+
+/**
+ * Run `onFire` after `ms` of *visible* time, not wall time. When the tab is
+ * hidden mid-countdown we freeze the timer; on return we resume with whatever
+ * time was left. The principle: a 5-second undo should mean five seconds the
+ * user could actually see — Sonner does the same for toasts.
+ */
+function useVisibilityAwareTimeout(
+  active: boolean,
+  ms: number,
+  onFire: () => void
+) {
+  // Stash onFire in a ref so the effect doesn't restart every render
+  // (a fresh inline callback would otherwise reset the timer each tick).
+  const onFireRef = useRef(onFire);
+  onFireRef.current = onFire;
+
+  useEffect(() => {
+    if (!active) return;
+    let remaining = ms;
+    let startedAt = performance.now();
+    let id: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = () => {
+      id = setTimeout(() => {
+        id = null;
+        onFireRef.current();
+      }, remaining);
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (id !== null) {
+          clearTimeout(id);
+          remaining = Math.max(0, remaining - (performance.now() - startedAt));
+          id = null;
+        }
+      } else if (id === null) {
+        startedAt = performance.now();
+        schedule();
+      }
+    };
+
+    schedule();
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      if (id !== null) clearTimeout(id);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [active, ms]);
+}
 
 function loadStoredTabs(): SubjectTab[] | null {
   if (typeof window === "undefined") return null;
@@ -154,13 +207,13 @@ export default function TasksPage() {
     }
   }, [tabs, activeTabId]);
 
-  // Inline undo for Mark done.
+  // Inline undo for Mark done. Visibility-aware: the 5s pauses while the
+  // tab is hidden, so a user who alt-tabs away still sees the banner on
+  // return instead of finding it silently expired.
   const [lastDone, setLastDone] = useState<{ id: string; title: string } | null>(null);
-  useEffect(() => {
-    if (!lastDone) return;
-    const id = setTimeout(() => setLastDone(null), 5000);
-    return () => clearTimeout(id);
-  }, [lastDone]);
+  useVisibilityAwareTimeout(lastDone !== null, UNDO_TIMEOUT_MS, () =>
+    setLastDone(null)
+  );
 
   // Inline undo for closing a tab. Captures the position too so undo
   // restores the tab in its original spot, not at the end.
@@ -168,11 +221,9 @@ export default function TasksPage() {
     tab: SubjectTab;
     position: number;
   } | null>(null);
-  useEffect(() => {
-    if (!lastClosedTab) return;
-    const id = setTimeout(() => setLastClosedTab(null), 5000);
-    return () => clearTimeout(id);
-  }, [lastClosedTab]);
+  useVisibilityAwareTimeout(lastClosedTab !== null, UNDO_TIMEOUT_MS, () =>
+    setLastClosedTab(null)
+  );
 
   // ── Tab operations ────────────────────────────────────────
 
@@ -656,6 +707,8 @@ function StatusChip({ pending, overdue }: { pending: number; overdue: number }) 
 const TABLIST_ID = "tasks-tabs";
 const TABPANEL_ID = "tasks-panel";
 
+type TabMoveDirection = "prev" | "next" | "first" | "last";
+
 function SubjectTabs({
   tabs,
   activeTabId,
@@ -679,6 +732,34 @@ function SubjectTabs({
   onAddTabForSubject: (subjectLabel: string | null) => void;
   onCreateNewSubject: () => void;
 }) {
+  // Refs keyed by tab id so arrow-key navigation can move focus without
+  // touching the DOM directly from a child. WAI-ARIA tablist pattern.
+  const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const handleMoveFocus = useCallback(
+    (fromTabId: string, direction: TabMoveDirection) => {
+      if (tabs.length === 0) return;
+      const idx = tabs.findIndex((t) => t.id === fromTabId);
+      if (idx === -1) return;
+      const targetIdx =
+        direction === "prev"
+          ? (idx - 1 + tabs.length) % tabs.length
+          : direction === "next"
+          ? (idx + 1) % tabs.length
+          : direction === "first"
+          ? 0
+          : tabs.length - 1;
+      const target = tabs[targetIdx];
+      if (!target || target.id === fromTabId) return;
+      onSelect(target.id);
+      // Focus on the next frame so the new tabindex=0 has been applied.
+      requestAnimationFrame(() => {
+        tabRefs.current[target.id]?.focus();
+      });
+    },
+    [tabs, onSelect]
+  );
+
   return (
     <div
       // z-10 + -mb-px: the row sits one pixel into the card so the active
@@ -722,9 +803,13 @@ function SubjectTabs({
               isActive={tab.id === activeTabId}
               closable={closable}
               tabPanelId={TABPANEL_ID}
+              tabRef={(el) => {
+                tabRefs.current[tab.id] = el;
+              }}
               onSelect={() => onSelect(tab.id)}
               onClose={() => onClose(tab.id)}
               onRename={(label) => onRename(tab.id, label)}
+              onMoveFocus={(direction) => handleMoveFocus(tab.id, direction)}
             />
           );
         })}
@@ -746,9 +831,11 @@ function SubjectTab({
   isActive,
   closable,
   tabPanelId,
+  tabRef,
   onSelect,
   onClose,
   onRename,
+  onMoveFocus,
 }: {
   tab: SubjectTab;
   color: string;
@@ -756,9 +843,11 @@ function SubjectTab({
   isActive: boolean;
   closable: boolean;
   tabPanelId: string;
+  tabRef: (el: HTMLDivElement | null) => void;
   onSelect: () => void;
   onClose: () => void;
   onRename: (label: string) => void;
+  onMoveFocus: (direction: TabMoveDirection) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -792,6 +881,7 @@ function SubjectTab({
 
   return (
     <div
+      ref={tabRef}
       role="tab"
       tabIndex={editing ? -1 : isActive ? 0 : -1}
       aria-selected={isActive}
@@ -799,9 +889,26 @@ function SubjectTab({
       onClick={onSelect}
       onKeyDown={(e) => {
         if (editing) return;
+        // Activation
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onSelect();
+          return;
+        }
+        // WAI-ARIA tablist navigation. Left/Right cycle, Home/End jump.
+        // Selecting also moves focus (auto-activate, the common pattern).
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          onMoveFocus("prev");
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          onMoveFocus("next");
+        } else if (e.key === "Home") {
+          e.preventDefault();
+          onMoveFocus("first");
+        } else if (e.key === "End") {
+          e.preventDefault();
+          onMoveFocus("last");
         }
       }}
       className={cn(
@@ -831,11 +938,17 @@ function SubjectTab({
 
       <span
         aria-hidden
-        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+        // Opacity moved off inline-style so group-hover/focus can lift the
+        // inactive dot. Tiny unseen detail — the dot "notices" the cursor.
+        className={cn(
+          "w-1.5 h-1.5 rounded-full flex-shrink-0",
+          isActive
+            ? "opacity-100"
+            : "opacity-[0.55] group-hover:opacity-90 group-focus-within:opacity-90"
+        )}
         style={{
           backgroundColor: color,
-          opacity: isActive ? 1 : 0.55,
-          transition: "opacity 200ms ease",
+          transition: "opacity 180ms var(--ease-out)",
         }}
       />
 
@@ -1037,6 +1150,10 @@ function AddTabButton({
             "dropdown-enter absolute top-full mt-1.5 w-60 max-w-[calc(100vw-2rem)] rounded-xl border border-lavender-200/80 dark:border-lavender-800/70 bg-white dark:bg-lavender-900 shadow-[0_10px_28px_-12px_rgba(38,45,64,0.18),0_4px_10px_-4px_rgba(38,45,64,0.10)] dark:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.55)] overflow-hidden z-50",
             alignRight ? "right-0" : "left-0"
           )}
+          // Scale from the corner that touches the trigger (the + button) so the
+          // motion reads as "growing out of the button" rather than appearing from
+          // nowhere. Overrides the .dropdown-enter default of `top center`.
+          style={{ transformOrigin: alignRight ? "top right" : "top left" }}
         >
           <div className="px-3 pt-2.5 pb-1.5">
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-steel-500 dark:text-steel-400">
