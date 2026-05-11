@@ -5,6 +5,7 @@ import {
   useMemo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   type CSSProperties,
   type ReactNode,
@@ -805,10 +806,11 @@ function SubjectTab({
       }}
       className={cn(
         "press group relative inline-flex items-center gap-2 whitespace-nowrap cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
-        // Active stays full-width (always readable). Inactive flex-shrinks
-        // with a truncated label so the row never needs scroll.
+        // Active stays readable but is capped so a long custom label can't
+        // shove the + button off-screen. Inactive flex-shrinks aggressively
+        // with a truncated label so the row never needs horizontal scroll.
         isActive
-          ? "flex-shrink-0 z-10 pl-4 pr-2 py-2.5 rounded-t-xl bg-white dark:bg-lavender-900 border border-b-0 border-lavender-200/60 dark:border-lavender-800/60 text-baltic-800 dark:text-baltic-100 overflow-hidden"
+          ? "flex-shrink-0 max-w-[18rem] z-10 pl-4 pr-2 py-2.5 rounded-t-xl bg-white dark:bg-lavender-900 border border-b-0 border-lavender-200/60 dark:border-lavender-800/60 text-baltic-800 dark:text-baltic-100 overflow-hidden"
           : "min-w-[5rem] max-w-[10rem] px-3 py-2 rounded-t-lg text-steel-500 dark:text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-baltic-50/60 dark:hover:bg-baltic-900/30"
       )}
       style={{
@@ -856,7 +858,7 @@ function SubjectTab({
           }}
           aria-label="Tab name"
           maxLength={40}
-          className="bg-transparent outline-none text-xs font-semibold text-baltic-800 dark:text-baltic-100 min-w-[2rem] w-[10ch] focus:ring-1 focus:ring-baltic-400/40 rounded-sm px-0.5"
+          className="bg-transparent outline-none text-xs font-semibold text-baltic-800 dark:text-baltic-100 min-w-[3rem] w-[16ch] max-w-full focus:ring-1 focus:ring-baltic-400/40 rounded-sm px-0.5"
         />
       ) : (
         <span
@@ -939,6 +941,9 @@ function SubjectTab({
    or Escape so the popover never gets stuck.
    ───────────────────────────────────────────────────────────── */
 
+const POPOVER_WIDTH_PX = 240; // matches w-60 below — kept in sync for measurement
+const POPOVER_VIEWPORT_PAD_PX = 16;
+
 function AddTabButton({
   subjects,
   onAddTabForSubject,
@@ -949,6 +954,11 @@ function AddTabButton({
   onCreateNewSubject: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Which edge the popover anchors to. Default left (extend right). Flip to
+  // right (extend left) when the button is near the viewport right edge so
+  // the menu never overflows the page — typical case when many tabs push
+  // the + to the far right of the row.
+  const [alignRight, setAlignRight] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click + Escape.
@@ -971,6 +981,19 @@ function AddTabButton({
       document.removeEventListener("mousedown", handleClick);
       document.removeEventListener("keydown", handleKey);
     };
+  }, [open]);
+
+  // Measure on open: if anchoring left would overflow the viewport, flip
+  // to right-anchored. useLayoutEffect so we pick the side before paint
+  // and the menu never "jumps" after first render.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const el = wrapperRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const overflowsRight =
+      rect.left + POPOVER_WIDTH_PX > window.innerWidth - POPOVER_VIEWPORT_PAD_PX;
+    setAlignRight(overflowsRight);
   }, [open]);
 
   return (
@@ -1010,7 +1033,10 @@ function AddTabButton({
       {open && (
         <div
           role="menu"
-          className="dropdown-enter absolute left-0 top-full mt-1.5 w-60 rounded-xl border border-lavender-200/80 dark:border-lavender-800/70 bg-white dark:bg-lavender-900 shadow-[0_10px_28px_-12px_rgba(38,45,64,0.18),0_4px_10px_-4px_rgba(38,45,64,0.10)] dark:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.55)] overflow-hidden z-50"
+          className={cn(
+            "dropdown-enter absolute top-full mt-1.5 w-60 max-w-[calc(100vw-2rem)] rounded-xl border border-lavender-200/80 dark:border-lavender-800/70 bg-white dark:bg-lavender-900 shadow-[0_10px_28px_-12px_rgba(38,45,64,0.18),0_4px_10px_-4px_rgba(38,45,64,0.10)] dark:shadow-[0_12px_30px_-10px_rgba(0,0,0,0.55)] overflow-hidden z-50",
+            alignRight ? "right-0" : "left-0"
+          )}
         >
           <div className="px-3 pt-2.5 pb-1.5">
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-steel-500 dark:text-steel-400">
@@ -1236,7 +1262,11 @@ function TaskRow({
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === "Enter") onSelect();
+        // Space + Enter both activate, matching native button semantics.
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
       }}
       className={cn(
         "press group flex items-center gap-3 py-2 px-2 rounded-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-baltic-950 hover:bg-baltic-50/70 dark:hover:bg-baltic-900/30",
@@ -1656,7 +1686,12 @@ function StickyCard({
   return (
     <div
       className={cn(
-        "paper-card sticky-enter relative px-6 pt-7 pb-6 border border-lavender-200/60 dark:border-lavender-800/60 overflow-hidden",
+        // `isolate` confines the card's internal z-index (paper-card ::after at
+        // z:0, inner content at z:10) to a private stacking context, so the
+        // tab row's z-10 above the card paints cleanly and any popover anchored
+        // in the row (e.g. AddTabButton) renders over the card content instead
+        // of slipping behind it.
+        "paper-card sticky-enter relative isolate px-6 pt-7 pb-6 border border-lavender-200/60 dark:border-lavender-800/60 overflow-hidden",
         topFlat && "!rounded-t-none",
         className
       )}
