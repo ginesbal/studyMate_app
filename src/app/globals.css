@@ -1,8 +1,15 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  /* Strong custom easing curves — built-in CSS easings are too weak */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
 
 @layer base {
   * {
@@ -67,7 +74,9 @@
 
 @layer components {
   .transition-smooth {
-    @apply transition-all duration-150 ease-out;
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-out);
   }
 
   /* Card — playful, rounded */
@@ -222,6 +231,247 @@
   .dropdown-enter {
     animation: dropdown-in 0.15s ease-out;
     transform-origin: top center;
+  }
+
+  /* Modal entrance — backdrop fades, panel scales-from-0.96 (never from 0,
+     per Emil's "nothing in the real world appears from nothing" rule).
+     Center-origin: a modal isn't anchored to a trigger, it owns the viewport. */
+  @keyframes modal-backdrop-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @keyframes modal-panel-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .modal-backdrop-enter {
+    animation: modal-backdrop-in 180ms ease-out;
+  }
+
+  .modal-panel-enter {
+    animation: modal-panel-in 220ms var(--ease-out);
+    transform-origin: center;
+  }
+
+  /* ────────────────────────────────────────────────────────
+     Student-vibe primitives — sticky notes, tape, doodles
+     ──────────────────────────────────────────────────────── */
+
+  /* Notebook-paper desk surface — faint dot grid, no movement */
+  .desk-surface {
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(96, 114, 159, 0.10) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+
+  .dark .desk-surface {
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(159, 170, 198, 0.06) 1px, transparent 0);
+  }
+
+  /* Paper-card — sticky note feel: layered shadow, soft warmth */
+  .paper-card {
+    @apply relative bg-white dark:bg-lavender-900 rounded-2xl;
+    box-shadow:
+      0 1px 1px rgba(38, 45, 64, 0.04),
+      0 4px 8px -2px rgba(38, 45, 64, 0.06),
+      0 14px 28px -10px rgba(38, 45, 64, 0.10);
+  }
+
+  .dark .paper-card {
+    box-shadow:
+      0 1px 1px rgba(0, 0, 0, 0.20),
+      0 4px 10px -2px rgba(0, 0, 0, 0.30),
+      0 14px 30px -10px rgba(0, 0, 0, 0.40);
+  }
+
+  /* Subtle paper grain — barely visible, adds warmth */
+  .paper-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image:
+      radial-gradient(circle at 30% 20%, rgba(199, 206, 100, 0.04), transparent 60%),
+      radial-gradient(circle at 80% 80%, rgba(96, 114, 159, 0.03), transparent 55%);
+    mix-blend-mode: multiply;
+  }
+
+  .dark .paper-card::after {
+    background-image:
+      radial-gradient(circle at 30% 20%, rgba(199, 206, 100, 0.04), transparent 60%),
+      radial-gradient(circle at 80% 80%, rgba(159, 170, 198, 0.03), transparent 55%);
+    mix-blend-mode: screen;
+  }
+
+  /* Washi-tape strip — translucent paper, torn ends, soft adhesion shadow.
+     Height + position + rotation come from inline style + --tape-rot. */
+  .washi-tape {
+    position: absolute;
+    z-index: 2;
+    height: 1.45rem;
+    pointer-events: none;
+    opacity: 0.78;
+    /* Layered texture: diagonal weave + soft warmth + faint speckle */
+    background-image:
+      repeating-linear-gradient(
+        132deg,
+        transparent 0 5px,
+        rgba(255, 255, 255, 0.18) 5px 6px
+      ),
+      radial-gradient(circle at 28% 36%, rgba(255, 255, 255, 0.22) 0%, transparent 55%),
+      radial-gradient(circle at 72% 68%, rgba(0, 0, 0, 0.05) 0%, transparent 55%);
+    background-blend-mode: normal, soft-light, soft-light;
+    /* Soft adhesion shadow — drop-shadow respects the torn clip-path */
+    filter:
+      drop-shadow(0 1.5px 1.5px rgba(38, 45, 64, 0.16))
+      drop-shadow(0 0.5px 0px rgba(38, 45, 64, 0.08));
+    transform: rotate(var(--tape-rot, 0deg));
+  }
+
+  .dark .washi-tape {
+    opacity: 0.7;
+    filter:
+      drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45))
+      drop-shadow(0 0.5px 0 rgba(0, 0, 0, 0.30));
+  }
+
+  /* Two distinct torn-edge masks so paired pieces don't look identical */
+  .washi-torn-a {
+    clip-path: polygon(
+      2% 6%, 14% 0%, 32% 4%, 54% 1%, 74% 5%, 92% 1%, 100% 8%,
+      97% 28%, 100% 52%, 96% 76%, 99% 96%,
+      86% 100%, 64% 95%, 42% 100%, 22% 96%, 6% 100%,
+      0% 78%, 4% 54%, 0% 30%, 2% 6%
+    );
+  }
+
+  .washi-torn-b {
+    clip-path: polygon(
+      0% 4%, 18% 1%, 38% 6%, 58% 0%, 78% 4%, 98% 0%,
+      100% 24%, 96% 48%, 100% 72%, 97% 96%,
+      78% 99%, 58% 95%, 38% 100%, 18% 96%, 2% 100%,
+      4% 76%, 0% 50%, 3% 26%, 0% 4%
+    );
+  }
+
+  /* Tape color fills — translucent so the card faintly shows through */
+  .washi-cream    { background-color: rgba(227, 231, 177, 0.82); }
+  .washi-baltic   { background-color: rgba(159, 170, 198, 0.78); }
+  .washi-ash      { background-color: rgba(200, 212, 196, 0.80); }
+  .washi-lavender { background-color: rgba(197, 201, 211, 0.78); }
+
+  .dark .washi-cream    { background-color: rgba(111, 116, 37, 0.82); }
+  .dark .washi-baltic   { background-color: rgba(77, 91, 128, 0.82); }
+  .dark .washi-ash      { background-color: rgba(71, 89, 64, 0.82); }
+  .dark .washi-lavender { background-color: rgba(88, 96, 116, 0.82); }
+
+
+  /* Highlighter — yellow pen swipe behind a key phrase */
+  .highlighter {
+    background-image:
+      linear-gradient(
+        180deg,
+        transparent 55%,
+        rgba(213, 218, 139, 0.55) 55%,
+        rgba(213, 218, 139, 0.55) 92%,
+        transparent 92%
+      );
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    padding: 0 0.12em;
+  }
+
+  .dark .highlighter {
+    background-image:
+      linear-gradient(
+        180deg,
+        transparent 55%,
+        rgba(199, 206, 100, 0.30) 55%,
+        rgba(199, 206, 100, 0.30) 92%,
+        transparent 92%
+      );
+  }
+
+  /* Pen-press feedback — apply to interactive elements */
+  .press {
+    transition: transform 160ms var(--ease-out);
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
+
+  /* Handwritten accent font — used sparingly */
+  .font-script {
+    font-family: 'Caveat', 'Plus Jakarta Sans', cursive;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  /* Doodle stroke — animates on first reveal */
+  @keyframes doodle-draw {
+    from { stroke-dashoffset: var(--doodle-len, 200); }
+    to   { stroke-dashoffset: 0; }
+  }
+
+  .doodle-draw path,
+  .doodle-draw line,
+  .doodle-draw polyline {
+    stroke-dasharray: var(--doodle-len, 200);
+    stroke-dashoffset: var(--doodle-len, 200);
+    animation: doodle-draw 800ms var(--ease-out) 200ms forwards;
+  }
+
+  /* Sticky-card entrance — staggered, gentle, never from scale(0) */
+  @keyframes sticky-enter {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .sticky-enter {
+    animation: sticky-enter 320ms var(--ease-out) backwards;
+  }
+
+  /* Stagger via inline --delay (set via style prop) */
+  .sticky-enter { animation-delay: var(--delay, 0ms); }
+
+  /* Reduced motion — keep opacity, drop movement */
+  @media (prefers-reduced-motion: reduce) {
+    .sticky-enter,
+    .doodle-draw path,
+    .doodle-draw line,
+    .doodle-draw polyline,
+    .float-slow,
+    .float-medium,
+    .progress-ring-circle,
+    .dropdown-enter,
+    .modal-backdrop-enter,
+    .modal-panel-enter {
+      animation: none !important;
+    }
+    .paper-card {
+      transition: none !important;
+      transform: none !important;
+    }
+    .press:active {
+      transform: none !important;
+    }
   }
 
   /* ─── Journal ruled-line background ─── */

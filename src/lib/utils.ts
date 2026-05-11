@@ -60,6 +60,45 @@ export function isOverdue(dateStr: string) {
   return due < new Date();
 }
 
+/**
+ * Clock-face label for "you'd hit your goal by X" — given how many minutes
+ * of focus the user still owes, returns the time of day they'd finish if
+ * they started right now. Returns null when there's nothing left to do.
+ */
+export function projectedFinishTime(minutesRemaining: number): string | null {
+  if (minutesRemaining <= 0) return null;
+  const finish = new Date(Date.now() + minutesRemaining * 60_000);
+  return finish.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * "Today" / "Tomorrow" / weekday name for dates within the next 6 days,
+ * "Mon, May 12" otherwise. Used to group upcoming tasks by day.
+ */
+export function dayLabel(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  const diff = Math.round(
+    (target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+  );
+  if (diff < 0) return "Overdue";
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Tomorrow";
+  if (diff < 7)
+    return date.toLocaleDateString("en-US", { weekday: "long" });
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export function groupByDate(
   tasks: { dueDate: string }[]
 ): Record<string, typeof tasks> {

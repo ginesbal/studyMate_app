@@ -32,8 +32,10 @@ interface PreferencesState {
   name: string;
   isFirstVisit: boolean;
   dailyGoal: number;
+  focusBlockMin: number;
   setName: (name: string) => void;
   setDailyGoal: (minutes: number) => void;
+  setFocusBlockMin: (minutes: number) => void;
 }
 
 const PreferencesContext = createContext<PreferencesState | null>(null);
@@ -41,11 +43,13 @@ const PreferencesContext = createContext<PreferencesState | null>(null);
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [name, setNameState] = useState("");
   const [dailyGoal, setDailyGoalState] = useState(120);
+  const [focusBlockMin, setFocusBlockMinState] = useState(25);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setNameState(load<string>("aim_name", ""));
     setDailyGoalState(load<number>("aim_daily_goal", 120));
+    setFocusBlockMinState(load<number>("aim_focus_block_min", 25));
     setMounted(true);
   }, []);
 
@@ -59,10 +63,25 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     save("aim_daily_goal", m);
   }, []);
 
+  const setFocusBlockMin = useCallback((m: number) => {
+    setFocusBlockMinState(m);
+    save("aim_focus_block_min", m);
+  }, []);
+
   if (!mounted) return null;
 
   return (
-    <PreferencesContext.Provider value={{ name, isFirstVisit: !name, dailyGoal, setName, setDailyGoal }}>
+    <PreferencesContext.Provider
+      value={{
+        name,
+        isFirstVisit: !name,
+        dailyGoal,
+        focusBlockMin,
+        setName,
+        setDailyGoal,
+        setFocusBlockMin,
+      }}
+    >
       {children}
     </PreferencesContext.Provider>
   );
