@@ -14,16 +14,22 @@ const TopologyBg = dynamic(() => import("@/components/ui/TopologyBg"), { ssr: fa
 
 type TimerState = "idle" | "running" | "paused" | "done" | "reflecting";
 
-// Topology line/background colors per state. Same state-driven shift as the
-// original (paused dims, done greens), re-tuned for the dark canvas so the
-// animated mesh reads as a living blueprint behind the timer.
-const TOPO_STATES: Record<TimerState, { color: number; bg: number }> = {
-  idle:       { color: 0x60729f, bg: 0x0a0d14 },
-  running:    { color: 0x60729f, bg: 0x0a0d14 },
-  paused:     { color: 0x4d5b80, bg: 0x0a0d14 },
-  done:       { color: 0x76946b, bg: 0x0a0d14 },
-  reflecting: { color: 0x60729f, bg: 0x0a0d14 },
-};
+// Topology backdrop presets — the line color is drawn from the shared app
+// palette so the focus page sits cohesively beside the rest of the app.
+// The mesh background stays on baltic-50 (the app surface) for every preset;
+// only the line color changes. The choice persists in localStorage.
+type TopoPresetKey = "baltic" | "ash" | "lavender" | "cream";
+
+const TOPO_BG = 0xeff1f5; // baltic-50
+
+const TOPO_PRESETS: { key: TopoPresetKey; label: string; color: number; hex: string }[] = [
+  { key: "baltic",   label: "Baltic",   color: 0x808eb3, hex: "#808eb3" },
+  { key: "ash",      label: "Ash",      color: 0x76946b, hex: "#76946b" },
+  { key: "lavender", label: "Lavender", color: 0x6e7891, hex: "#6e7891" },
+  { key: "cream",    label: "Cream",    color: 0x949b31, hex: "#949b31" },
+];
+
+const TOPO_STORAGE_KEY = "aim_focus_topo";
 
 const MUSIC_OPTIONS = [
   { id: "brown",  label: "Brown noise",  desc: "Low, warm, hush" },
@@ -51,18 +57,29 @@ export default function FocusPage() {
   const [musicOpen, setMusicOpen] = useState(false);
   const musicMenuRef = useRef<HTMLDivElement>(null);
 
+  const [topoPreset, setTopoPreset] = useState<TopoPresetKey>(() => {
+    if (typeof window === "undefined") return "baltic";
+    const saved = window.localStorage.getItem(TOPO_STORAGE_KEY);
+    return TOPO_PRESETS.some((p) => p.key === saved) ? (saved as TopoPresetKey) : "baltic";
+  });
+  const activePreset = TOPO_PRESETS.find((p) => p.key === topoPreset) ?? TOPO_PRESETS[0];
+
+  const selectPreset = useCallback((key: TopoPresetKey) => {
+    setTopoPreset(key);
+    if (typeof window !== "undefined") window.localStorage.setItem(TOPO_STORAGE_KEY, key);
+  }, []);
+
   const totalSeconds = duration * 60;
   const progress = ((totalSeconds - secondsLeft) / totalSeconds) * 100;
   const minutes = Math.floor(secondsLeft / 60);
   const seconds = secondsLeft % 60;
-  const topo = TOPO_STATES[timerState];
 
   const subjectColor = (() => {
-    if (!subject) return "rgba(255,255,255,0.45)";
+    if (!subject) return "#9faac6";
     const userSub = getSubject(subject);
     if (userSub) return userSub.color;
     const legacySub = SUBJECTS[subject as SubjectKey];
-    return legacySub?.color || "rgba(255,255,255,0.45)";
+    return legacySub?.color || "#9faac6";
   })();
 
   const subjectLabel = (() => {
@@ -188,17 +205,15 @@ export default function FocusPage() {
 
   return (
     <div className="fixed inset-0 z-50 focus-canvas focus-canvas-enter overflow-hidden">
-      {/* Background layers — animated topology mesh, then a soft vignette
-          so the moving lines never compete with the timer at center. */}
+      {/* Animated topology mesh — palette-tinted, light surface. */}
       <div className="absolute inset-0" aria-hidden>
-        <TopologyBg color={topo.color} backgroundColor={topo.bg} />
+        <TopologyBg color={activePreset.color} backgroundColor={TOPO_BG} />
       </div>
-      <div className="absolute inset-0 focus-vignette pointer-events-none" aria-hidden />
 
       {/* ── Top-left: context pill ── */}
       <header className="absolute top-6 left-6 z-10">
         <div className="focus-panel rounded-full px-4 py-2 flex items-center gap-3">
-          <span className="text-[10px] uppercase tracking-[0.22em] text-white/45">
+          <span className="text-[10px] uppercase tracking-[0.22em] text-steel-400">
             {timerState === "idle" && "Ready"}
             {timerState === "running" && "Focusing on"}
             {timerState === "paused" && "Paused"}
@@ -211,7 +226,7 @@ export default function FocusPage() {
               style={{ backgroundColor: subjectColor }}
               aria-hidden
             />
-            <span className="text-sm text-white/90 truncate max-w-[22ch]">
+            <span className="text-sm text-baltic-700 truncate max-w-[22ch]">
               {pillSubtitle}
             </span>
           </div>
@@ -236,40 +251,33 @@ export default function FocusPage() {
           </button>
           {musicOpen && (
             <div
-              className="absolute right-0 mt-2 w-72 rounded-2xl overflow-hidden dropdown-enter"
-              style={{
-                backgroundColor: "rgba(18, 22, 30, 0.92)",
-                backdropFilter: "blur(16px)",
-                WebkitBackdropFilter: "blur(16px)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                boxShadow: "0 20px 40px -12px rgba(0, 0, 0, 0.6)",
-                transformOrigin: "top right",
-              }}
+              className="absolute right-0 mt-2 w-72 rounded-2xl overflow-hidden bg-white border border-lavender-200 shadow-[0_16px_36px_-12px_rgba(38,45,64,0.28)] dropdown-enter"
+              style={{ transformOrigin: "top right" }}
               role="menu"
             >
-              <div className="px-4 pt-3 pb-2 border-b border-white/8">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Ambient</p>
+              <div className="px-4 pt-3 pb-2 border-b border-lavender-100">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-steel-400">Ambient</p>
               </div>
               <ul>
                 {MUSIC_OPTIONS.map((opt) => (
                   <li key={opt.id}>
                     <button
                       disabled
-                      className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left disabled:cursor-not-allowed group"
+                      className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left disabled:cursor-not-allowed"
                       role="menuitem"
                     >
                       <div className="min-w-0">
-                        <p className="text-sm text-white/55 truncate">{opt.label}</p>
-                        <p className="text-[11px] text-white/30 truncate">{opt.desc}</p>
+                        <p className="text-sm text-steel-500 truncate">{opt.label}</p>
+                        <p className="text-[11px] text-steel-400 truncate">{opt.desc}</p>
                       </div>
-                      <span className="text-[10px] uppercase tracking-[0.15em] text-white/35 border border-white/10 rounded-full px-1.5 py-0.5 flex-shrink-0">
+                      <span className="text-[10px] uppercase tracking-[0.15em] text-steel-400 border border-lavender-200 rounded-full px-1.5 py-0.5 flex-shrink-0">
                         Soon
                       </span>
                     </button>
                   </li>
                 ))}
               </ul>
-              <div className="px-4 py-2.5 border-t border-white/8 text-[11px] text-white/40">
+              <div className="px-4 py-2.5 border-t border-lavender-100 text-[11px] text-steel-400">
                 Ambient sound arrives in a later update.
               </div>
             </div>
@@ -299,6 +307,8 @@ export default function FocusPage() {
             onSubjectChange={setSubject}
             task={task}
             onTaskChange={setTask}
+            preset={topoPreset}
+            onPresetChange={selectPreset}
             canBegin={canBegin}
             onBegin={startTimer}
           />
@@ -338,7 +348,7 @@ export default function FocusPage() {
 
       {/* ── Bottom-center: mantra ── */}
       <footer className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
-        <p className="font-script text-base text-white/30 select-none">
+        <p className="font-script text-base text-baltic-300 select-none">
           no tabs, no shortcuts, one thing
         </p>
       </footer>
@@ -347,7 +357,7 @@ export default function FocusPage() {
 }
 
 // ───────────────────────────────────────────────────────────────
-// Setup stage — duration ring, subject, task, begin
+// Setup stage — duration ring, subject, task, backdrop, begin
 // ───────────────────────────────────────────────────────────────
 
 interface SetupStageProps {
@@ -357,6 +367,8 @@ interface SetupStageProps {
   onSubjectChange: (s: string | null) => void;
   task: string;
   onTaskChange: (s: string) => void;
+  preset: TopoPresetKey;
+  onPresetChange: (k: TopoPresetKey) => void;
   canBegin: boolean;
   onBegin: () => void;
 }
@@ -365,6 +377,7 @@ function SetupStage({
   duration, onDurationChange,
   subject, onSubjectChange,
   task, onTaskChange,
+  preset, onPresetChange,
   canBegin, onBegin,
 }: SetupStageProps) {
   return (
@@ -373,7 +386,7 @@ function SetupStage({
       <div className="relative" style={{ width: 320, height: 320 }}>
         <svg width={320} height={320} viewBox="0 0 320 320" className="absolute inset-0">
           {/* Outer hairline */}
-          <circle cx="160" cy="160" r="156" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
+          <circle cx="160" cy="160" r="156" fill="none" stroke="#dfe3ec" strokeWidth="0.5" />
           {/* 60 tick marks */}
           {Array.from({ length: 60 }).map((_, i) => {
             const angle = (i * 6 - 90) * (Math.PI / 180);
@@ -388,7 +401,7 @@ function SetupStage({
               <line
                 key={i}
                 x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={isMajor ? "rgba(255,255,255,0.30)" : "rgba(255,255,255,0.12)"}
+                stroke={isMajor ? "#9faac6" : "#c5c9d3"}
                 strokeWidth={isMajor ? 1.25 : 0.6}
                 strokeLinecap="round"
               />
@@ -404,8 +417,8 @@ function SetupStage({
               <circle
                 cx="160" cy="160" r={r}
                 fill="none"
-                stroke="rgba(255,255,255,0.55)"
-                strokeWidth="1"
+                stroke="#60729f"
+                strokeWidth="1.5"
                 strokeLinecap="round"
                 strokeDasharray={circumference}
                 strokeDashoffset={offset}
@@ -415,7 +428,7 @@ function SetupStage({
             );
           })()}
           {/* Inner hairline */}
-          <circle cx="160" cy="160" r="115" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="0.5" />
+          <circle cx="160" cy="160" r="115" fill="none" stroke="#e2e4e9" strokeWidth="0.5" />
         </svg>
 
         <div className="absolute inset-0 flex items-center justify-center">
@@ -430,15 +443,37 @@ function SetupStage({
 
       {/* Task field — optional one-liner powering the FOCUSING ON pill */}
       <div className="w-full mt-3">
-        <div className="relative">
-          <input
-            type="text"
-            value={task}
-            onChange={(e) => onTaskChange(e.target.value)}
-            placeholder="What are you working on? (optional)"
-            maxLength={60}
-            className="w-full px-4 py-2 text-sm rounded-full bg-white/[0.04] border border-white/12 text-white placeholder:text-white/40 outline-none focus:bg-white/[0.07] focus:border-white/30 transition-colors duration-150"
-          />
+        <input
+          type="text"
+          value={task}
+          onChange={(e) => onTaskChange(e.target.value)}
+          placeholder="What are you working on? (optional)"
+          maxLength={60}
+          className="w-full px-4 py-2 text-sm rounded-full bg-white border border-lavender-200 text-baltic-800 placeholder:text-steel-400 outline-none focus:border-baltic-400 focus:ring-2 focus:ring-baltic-400/20 transition-colors duration-150"
+        />
+      </div>
+
+      {/* Backdrop preset — palette color for the topology mesh */}
+      <div className="w-full mt-4 flex items-center justify-center gap-3">
+        <span className="text-[10px] uppercase tracking-[0.2em] text-steel-400">Backdrop</span>
+        <div className="flex items-center gap-1.5" role="group" aria-label="Topology color">
+          {TOPO_PRESETS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => onPresetChange(p.key)}
+              aria-label={p.label}
+              aria-pressed={preset === p.key}
+              title={p.label}
+              className={cn(
+                "w-5 h-5 rounded-full transition-transform duration-150 press",
+                preset === p.key
+                  ? "ring-2 ring-offset-2 ring-baltic-400 ring-offset-[#eff1f5]"
+                  : "hover:scale-110"
+              )}
+              style={{ backgroundColor: p.hex }}
+            />
+          ))}
         </div>
       </div>
 
@@ -448,14 +483,14 @@ function SetupStage({
         disabled={!canBegin}
         className="mt-6 focus-btn focus-btn-primary !px-7 !py-3 text-[15px]"
       >
-        <svg width={14} height={14} viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
-          <polygon points="3,2 12,7 3,12" fill="currentColor" stroke="none" />
+        <svg width={14} height={14} viewBox="0 0 14 14" fill="none">
+          <polygon points="3,2 12,7 3,12" fill="currentColor" />
         </svg>
         Begin focusing
       </button>
 
       {!canBegin && (
-        <p className="mt-3 text-xs text-white/40">Pick a subject to begin</p>
+        <p className="mt-3 text-xs text-steel-400">Pick a subject to begin</p>
       )}
     </div>
   );
@@ -485,7 +520,7 @@ function SessionStage({
 }: SessionStageProps) {
   const size = 320;
   const ringR = 144;
-  const ringStroke = 1.5;
+  const ringStroke = 2;
   const ringCircumference = 2 * Math.PI * ringR;
   const ringOffset = ringCircumference * (1 - progress / 100);
   const isDone = timerState === "done";
@@ -509,7 +544,7 @@ function SessionStage({
               <line
                 key={i}
                 x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={isMajor ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.10)"}
+                stroke={isMajor ? "#9faac6" : "#c5c9d3"}
                 strokeWidth={isMajor ? 1.25 : 0.6}
                 strokeLinecap="round"
                 className="focus-tick-enter"
@@ -522,7 +557,7 @@ function SessionStage({
           <circle
             cx={size / 2} cy={size / 2} r={ringR}
             fill="none"
-            stroke="rgba(255,255,255,0.08)"
+            stroke="#e2e4e9"
             strokeWidth={ringStroke}
           />
 
@@ -530,7 +565,7 @@ function SessionStage({
           <circle
             cx={size / 2} cy={size / 2} r={ringR}
             fill="none"
-            stroke={isDone ? "rgba(199, 206, 100, 0.85)" : "rgba(255, 255, 255, 0.95)"}
+            stroke={isDone ? "#76946b" : "#60729f"}
             strokeWidth={ringStroke}
             strokeLinecap="round"
             strokeDasharray={ringCircumference}
@@ -556,11 +591,12 @@ function SessionStage({
           <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
             <line
               x1={size / 2} y1={size / 2} x2={size / 2} y2={20}
-              stroke="rgba(255,255,255,0.40)"
+              stroke="#808eb3"
               strokeWidth={1}
               strokeLinecap="round"
+              opacity={0.5}
             />
-            <circle cx={size / 2} cy={size / 2} r={2} fill="rgba(255,255,255,0.55)" />
+            <circle cx={size / 2} cy={size / 2} r={2} fill="#808eb3" />
           </svg>
         </div>
 
@@ -569,13 +605,13 @@ function SessionStage({
           <p
             className={cn(
               "text-7xl font-extralight tracking-tighter tabular-nums leading-none",
-              isDone ? "text-white/75" : "text-white",
+              isDone ? "text-ash-600" : "text-baltic-800",
             )}
             aria-live="polite"
           >
             {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
           </p>
-          <p className="mt-3 text-[11px] uppercase tracking-[0.22em] text-white/40 tabular-nums">
+          <p className="mt-3 text-[11px] uppercase tracking-[0.22em] text-steel-400 tabular-nums">
             {isDone
               ? "Complete"
               : `/ ${String(duration).padStart(2, "0")}:00 · ${timerState === "paused" ? "Paused" : "Focusing"}`
@@ -665,18 +701,19 @@ function ReflectionStage({
       {/* Session summary */}
       <div className="flex items-center gap-2 mb-1">
         <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: subjectColor }} />
-        <span className="text-xs text-white/55 tabular-nums">
+        <span className="text-xs text-steel-500 tabular-nums">
           {formatTime(elapsedMinutes)}{subjectLabel ? ` · ${subjectLabel}` : ""}
         </span>
       </div>
-      {task.trim() && (
-        <p className="text-[11px] text-white/35 mb-5 italic truncate max-w-full">
+      {task.trim() ? (
+        <p className="text-[11px] text-steel-400 mb-5 italic truncate max-w-full">
           {task.trim()}
         </p>
+      ) : (
+        <div className="mb-5" />
       )}
-      {!task.trim() && <div className="mb-5" />}
 
-      <h2 className="text-lg font-medium text-white mb-6 tracking-tight">
+      <h2 className="text-lg font-medium text-baltic-800 mb-6 tracking-tight">
         How focused were you?
       </h2>
 
@@ -689,7 +726,7 @@ function ReflectionStage({
           onChange={(e) => onNoteChange(e.target.value)}
           maxLength={80}
           placeholder="What clicked? (optional)"
-          className="w-full px-4 py-2 text-sm text-center rounded-full bg-white/[0.04] border border-white/12 text-white placeholder:text-white/35 outline-none focus:bg-white/[0.07] focus:border-white/30 transition-colors duration-150"
+          className="w-full px-4 py-2 text-sm text-center rounded-full bg-white border border-lavender-200 text-baltic-800 placeholder:text-steel-400 outline-none focus:border-baltic-400 focus:ring-2 focus:ring-baltic-400/20 transition-colors duration-150"
         />
       </div>
 

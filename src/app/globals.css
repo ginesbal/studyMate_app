@@ -480,28 +480,20 @@
   }
 
   /* ────────────────────────────────────────────────────────
-     Focus canvas — dark, quiet, geometric. One thing.
+     Focus canvas — light, quiet, geometric. One thing.
+     Light-only by design: no dark: variants, so the page reads the
+     same regardless of the app-wide theme toggle. Colors are drawn
+     from the shared palette (baltic / lavender / steel) so it sits
+     cohesively beside the dashboard and tasks pages.
      ──────────────────────────────────────────────────────── */
 
-  /* Almost-black base with a faint navy lift so the topology lines
-     have something to read against. Forced dark regardless of theme:
-     the focus page is its own space. */
   .focus-canvas {
-    background-color: #0a0d14;
-    color: rgba(255, 255, 255, 0.92);
+    background-color: #eff1f5; /* baltic-50 — the app surface */
+    color: #262d40;            /* baltic-800 — app body text */
   }
 
-  /* Soft vignette — sits over the animated topology so the moving mesh
-     fades toward the edges and never competes with the timer at center. */
-  .focus-vignette {
-    background:
-      radial-gradient(ellipse 90% 70% at 50% 50%,
-        transparent 0%,
-        rgba(0, 0, 0, 0.35) 100%);
-  }
-
-  /* Canvas entrance — the dark surface fades in once on mount so
-     navigating from a light page doesn't slam to black. */
+  /* Canvas entrance — fades in once on mount so navigating in from
+     another page doesn't snap. */
   @keyframes focus-canvas-in {
     from { opacity: 0; }
     to   { opacity: 1; }
@@ -529,30 +521,33 @@
     animation: focus-stage-in 240ms var(--ease-out);
   }
 
-  /* Focus surface — translucent panels (popover, reflection card)
-     that sit on the canvas. Glassy but not gimmicky: a single
-     well-tuned panel color and one soft border. */
+  /* Focus surface — white panels (context pill, popover, reflection
+     card) that float over the topology with a soft paper shadow. */
   .focus-panel {
-    background-color: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background-color: rgba(255, 255, 255, 0.88);
+    border: 1px solid #c5c9d3; /* lavender-200 */
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow:
+      0 1px 2px rgba(38, 45, 64, 0.06),
+      0 6px 16px -8px rgba(38, 45, 64, 0.12);
   }
 
-  /* Focus button — pill, light-on-dark. Press feedback per Emil. */
+  /* Focus button — pill, matches the app's button palette. Press
+     feedback per Emil. */
   .focus-btn {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-sm font-medium;
-    background-color: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.92);
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    background-color: #ffffff;
+    color: #394460;            /* baltic-700 */
+    border: 1px solid #c5c9d3; /* lavender-200 */
     transition: background-color 160ms var(--ease-out),
                 border-color 160ms var(--ease-out),
                 transform 160ms var(--ease-out);
   }
 
   .focus-btn:hover {
-    background-color: rgba(255, 255, 255, 0.13);
-    border-color: rgba(255, 255, 255, 0.16);
+    background-color: #f0f1f4; /* lavender-50 */
+    border-color: #a8aebd;     /* lavender-300 */
   }
 
   .focus-btn:active {
@@ -560,7 +555,7 @@
   }
 
   .focus-btn:disabled {
-    opacity: 0.35;
+    opacity: 0.4;
     cursor: not-allowed;
   }
 
@@ -568,20 +563,22 @@
     transform: none;
   }
 
-  /* Primary action — the one bright button (Begin, Reflect, Save). */
+  /* Primary action — the one filled button (Begin, Resume, Reflect,
+     Save). Baltic-600, same as the app's primary Button. */
   .focus-btn-primary {
-    background-color: rgba(255, 255, 255, 0.96);
-    color: #0a0d14;
+    background-color: #4d5b80; /* baltic-600 */
+    color: #ffffff;
     border-color: transparent;
   }
 
   .focus-btn-primary:hover {
-    background-color: rgb(255, 255, 255);
+    background-color: #394460; /* baltic-700 */
+    border-color: transparent;
   }
 
   .focus-btn-primary:disabled {
-    background-color: rgba(255, 255, 255, 0.20);
-    color: rgba(255, 255, 255, 0.45);
+    background-color: #bfc6d9; /* baltic-200 */
+    color: #ffffff;
   }
 
   /* Tick reveal — used on timer face when a session starts.

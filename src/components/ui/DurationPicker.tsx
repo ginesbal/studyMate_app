@@ -84,7 +84,7 @@ export default function DurationPicker({ value, onChange, disabled }: DurationPi
         <button
           onClick={decrement}
           disabled={disabled || value <= MIN}
-          className="w-10 h-10 rounded-full flex items-center justify-center border border-white/15 text-white/70 hover:bg-white/10 hover:border-white/25 disabled:opacity-25 disabled:cursor-not-allowed transition-[background-color,border-color,transform] duration-150 ease-out press"
+          className="w-10 h-10 rounded-full flex items-center justify-center border border-lavender-200 text-baltic-500 hover:bg-lavender-50 hover:border-lavender-300 disabled:opacity-30 disabled:cursor-not-allowed transition-[background-color,border-color,transform] duration-150 ease-out press"
           aria-label="Decrease duration"
         >
           <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
@@ -105,11 +105,11 @@ export default function DurationPicker({ value, onChange, disabled }: DurationPi
           )}
           title="Scroll or drag to change"
         >
-          <span className="text-6xl font-extralight tracking-tighter tabular-nums text-white leading-none">
+          <span className="text-6xl font-extralight tracking-tighter tabular-nums text-baltic-800 leading-none">
             {formatDisplay(value)}
           </span>
           {value < 60 && (
-            <span className="text-[10px] uppercase tracking-[0.2em] text-white/35 mt-2">minutes</span>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-steel-400 mt-2">minutes</span>
           )}
         </div>
 
@@ -117,7 +117,7 @@ export default function DurationPicker({ value, onChange, disabled }: DurationPi
         <button
           onClick={increment}
           disabled={disabled || value >= MAX}
-          className="w-10 h-10 rounded-full flex items-center justify-center border border-white/15 text-white/70 hover:bg-white/10 hover:border-white/25 disabled:opacity-25 disabled:cursor-not-allowed transition-[background-color,border-color,transform] duration-150 ease-out press"
+          className="w-10 h-10 rounded-full flex items-center justify-center border border-lavender-200 text-baltic-500 hover:bg-lavender-50 hover:border-lavender-300 disabled:opacity-30 disabled:cursor-not-allowed transition-[background-color,border-color,transform] duration-150 ease-out press"
           aria-label="Increase duration"
         >
           <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
@@ -137,8 +137,8 @@ export default function DurationPicker({ value, onChange, disabled }: DurationPi
             className={cn(
               "px-2.5 py-1 rounded-full text-[11px] font-medium tabular-nums transition-[background-color,color] duration-150 ease-out press",
               value === p
-                ? "bg-white/12 text-white"
-                : "text-white/40 hover:text-white/80 hover:bg-white/5"
+                ? "bg-baltic-100 text-baltic-700"
+                : "text-steel-400 hover:text-baltic-600 hover:bg-lavender-50"
             )}
           >
             {p >= 60 ? `${p / 60}h` : `${p}m`}

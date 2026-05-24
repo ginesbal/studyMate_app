@@ -81,8 +81,8 @@ export function QualitySelector({ value, onChange, size = 32 }: QualitySelectorP
       <div className="flex items-center gap-4">
         {qualities.map((q) => {
           const selected = value === q;
-          const strokeColor = selected ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.30)";
-          const fillColor = selected ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.18)";
+          const strokeColor = selected ? "#60729f" : "#c5c9d3";
+          const fillColor = selected ? "#4d5b80" : "#c5c9d3";
           return (
             <button
               key={q}
@@ -93,8 +93,8 @@ export function QualitySelector({ value, onChange, size = 32 }: QualitySelectorP
               className={cn(
                 "relative rounded-full p-2 transition-[background-color,transform] duration-150 ease-out press",
                 selected
-                  ? "bg-white/10 ring-1 ring-white/30"
-                  : "hover:bg-white/5"
+                  ? "bg-baltic-50 ring-1 ring-baltic-400/40"
+                  : "hover:bg-lavender-50"
               )}
             >
               <svg width={size} height={size} viewBox="0 0 16 16">
@@ -119,9 +119,9 @@ export function QualitySelector({ value, onChange, size = 32 }: QualitySelectorP
       </div>
       <div className="h-5">
         {value && (
-          <p className="text-xs text-white/85 text-center">
+          <p className="text-xs text-baltic-700 text-center">
             <span className="font-medium">{QUALITY_LEVELS[value].label}</span>
-            <span className="text-white/45"> · {QUALITY_LEVELS[value].description}</span>
+            <span className="text-steel-400"> · {QUALITY_LEVELS[value].description}</span>
           </p>
         )}
       </div>

@@ -77,22 +77,22 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
         onClick={() => { if (!disabled) setOpen(!open); }}
         disabled={disabled}
         className={cn(
-          "flex items-center gap-2 px-3.5 py-2 rounded-full text-sm w-full max-w-[260px] border transition-[background-color,border-color,transform] duration-150 ease-out press",
+          "flex items-center gap-2 px-3.5 py-2 rounded-full text-sm w-full max-w-[260px] border bg-white transition-[background-color,border-color,transform] duration-150 ease-out press",
           open
-            ? "bg-white/[0.07] border-white/30"
-            : "bg-white/[0.04] border-white/12 hover:bg-white/[0.07] hover:border-white/20",
+            ? "border-baltic-400 ring-2 ring-baltic-400/20"
+            : "border-lavender-200 hover:border-lavender-300",
           disabled && "opacity-50 cursor-not-allowed"
         )}
       >
         {selected ? (
           <>
             <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: selected.color }} />
-            <span className="text-white/90 truncate">{selected.label}</span>
+            <span className="text-baltic-700 truncate">{selected.label}</span>
           </>
         ) : (
-          <span className="text-white/45">Select subject</span>
+          <span className="text-steel-400">Select subject</span>
         )}
-        <svg className="ml-auto flex-shrink-0 text-white/45" width={12} height={12} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+        <svg className="ml-auto flex-shrink-0 text-steel-400" width={12} height={12} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
           <path d={open ? "M3 7.5L6 4.5L9 7.5" : "M3 4.5L6 7.5L9 4.5"} />
         </svg>
       </button>
@@ -100,15 +100,8 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
       {/* Dropdown */}
       {open && (
         <div
-          className="absolute z-50 mt-2 w-64 rounded-2xl overflow-hidden dropdown-enter"
-          style={{
-            backgroundColor: "rgba(18, 22, 30, 0.92)",
-            backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
-            boxShadow: "0 20px 40px -12px rgba(0, 0, 0, 0.6)",
-            transformOrigin: "top left",
-          }}
+          className="absolute z-50 mt-2 w-64 rounded-2xl overflow-hidden bg-white border border-lavender-200 shadow-[0_16px_36px_-12px_rgba(38,45,64,0.28)] dropdown-enter"
+          style={{ transformOrigin: "top left" }}
         >
           {/* Subject list */}
           {subjects.length > 0 && (
@@ -119,8 +112,8 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
                   className={cn(
                     "flex items-center gap-2.5 px-3 py-2 cursor-pointer group transition-colors duration-150",
                     value === sub.label
-                      ? "bg-white/8"
-                      : "hover:bg-white/[0.04]"
+                      ? "bg-baltic-50"
+                      : "hover:bg-lavender-50"
                   )}
                 >
                   <div
@@ -131,8 +124,8 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
                     <span className={cn(
                       "text-sm truncate",
                       value === sub.label
-                        ? "text-white font-medium"
-                        : "text-white/70"
+                        ? "text-baltic-700 font-medium"
+                        : "text-baltic-600"
                     )}>
                       {sub.label}
                     </span>
@@ -142,8 +135,8 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
                     className={cn(
                       "flex-shrink-0 p-0.5 rounded transition-colors duration-150",
                       confirmDelete === sub.id
-                        ? "text-red-400 opacity-100"
-                        : "text-white/30 opacity-0 group-hover:opacity-100 hover:text-red-400"
+                        ? "text-red-500 opacity-100"
+                        : "text-steel-400 opacity-0 group-hover:opacity-100 hover:text-red-500"
                     )}
                     title={confirmDelete === sub.id ? "Click again to confirm" : "Delete subject"}
                   >
@@ -156,7 +149,7 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
             </div>
           )}
 
-          <div className="border-t border-white/8" />
+          <div className="border-t border-lavender-100" />
 
           {adding ? (
             <div className="p-3 space-y-3">
@@ -168,7 +161,7 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
                 onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") setAdding(false); }}
                 placeholder="Subject name"
                 maxLength={30}
-                className="w-full px-3 py-1.5 text-sm rounded-md border border-white/15 bg-white/5 text-white placeholder:text-white/35 outline-none focus:ring-2 focus:ring-white/20 focus:border-white/40 transition-colors duration-150"
+                className="w-full px-3 py-1.5 text-sm rounded-md border border-lavender-200 bg-white text-baltic-800 placeholder:text-steel-400 outline-none focus:ring-2 focus:ring-baltic-400/20 focus:border-baltic-400 transition-colors duration-150"
               />
               <div className="flex items-center gap-1.5 flex-wrap">
                 {SUBJECT_COLORS.map((c) => (
@@ -177,7 +170,7 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
                     onClick={() => setNewColor(c)}
                     className={cn(
                       "w-5 h-5 rounded-full transition-transform duration-150",
-                      newColor === c ? "ring-2 ring-offset-2 ring-white/70 ring-offset-[#13171f]" : "hover:scale-110"
+                      newColor === c ? "ring-2 ring-offset-2 ring-baltic-400 ring-offset-white" : "hover:scale-110"
                     )}
                     style={{ backgroundColor: c }}
                   />
@@ -187,13 +180,13 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
                 <button
                   onClick={handleAdd}
                   disabled={!newLabel.trim()}
-                  className="px-3 py-1 text-xs font-medium rounded-full bg-white text-[#0a0d14] hover:bg-white/90 disabled:bg-white/20 disabled:text-white/45 disabled:cursor-not-allowed transition-colors duration-150 press"
+                  className="px-3 py-1 text-xs font-medium rounded-full bg-baltic-600 text-white hover:bg-baltic-700 disabled:bg-baltic-200 disabled:cursor-not-allowed transition-colors duration-150 press"
                 >
                   Add
                 </button>
                 <button
                   onClick={() => { setAdding(false); setNewLabel(""); }}
-                  className="px-3 py-1 text-xs font-medium rounded-full text-white/60 hover:text-white hover:bg-white/5 transition-colors duration-150 press"
+                  className="px-3 py-1 text-xs font-medium rounded-full text-steel-500 hover:text-baltic-600 hover:bg-lavender-50 transition-colors duration-150 press"
                 >
                   Cancel
                 </button>
@@ -202,7 +195,7 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
           ) : (
             <button
               onClick={() => setAdding(true)}
-              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-white/60 hover:text-white hover:bg-white/[0.04] transition-colors duration-150"
+              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-steel-500 hover:text-baltic-600 hover:bg-lavender-50 transition-colors duration-150"
             >
               <svg width={12} height={12} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
                 <path d="M6 2v8M2 6h8" />
