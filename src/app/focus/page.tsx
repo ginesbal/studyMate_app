@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { useFocus, useSubjects } from "@/lib/contexts";
 import { SUBJECTS, type SubjectKey, type FocusQuality } from "@/lib/types";
 import { cn, formatTime } from "@/lib/utils";
@@ -9,7 +10,20 @@ import { QualitySelector } from "@/components/ui/QualityIndicator";
 import DurationPicker from "@/components/ui/DurationPicker";
 import SubjectSelector from "@/components/ui/SubjectSelector";
 
+const TopologyBg = dynamic(() => import("@/components/ui/TopologyBg"), { ssr: false });
+
 type TimerState = "idle" | "running" | "paused" | "done" | "reflecting";
+
+// Topology line/background colors per state. Same state-driven shift as the
+// original (paused dims, done greens), re-tuned for the dark canvas so the
+// animated mesh reads as a living blueprint behind the timer.
+const TOPO_STATES: Record<TimerState, { color: number; bg: number }> = {
+  idle:       { color: 0x60729f, bg: 0x0a0d14 },
+  running:    { color: 0x60729f, bg: 0x0a0d14 },
+  paused:     { color: 0x4d5b80, bg: 0x0a0d14 },
+  done:       { color: 0x76946b, bg: 0x0a0d14 },
+  reflecting: { color: 0x60729f, bg: 0x0a0d14 },
+};
 
 const MUSIC_OPTIONS = [
   { id: "brown",  label: "Brown noise",  desc: "Low, warm, hush" },
@@ -20,7 +34,7 @@ const MUSIC_OPTIONS = [
 
 export default function FocusPage() {
   const router = useRouter();
-  const { addSession, sessions, todayMinutes } = useFocus();
+  const { addSession } = useFocus();
   const { getSubject } = useSubjects();
 
   const [duration, setDuration] = useState(25);
@@ -41,6 +55,7 @@ export default function FocusPage() {
   const progress = ((totalSeconds - secondsLeft) / totalSeconds) * 100;
   const minutes = Math.floor(secondsLeft / 60);
   const seconds = secondsLeft % 60;
+  const topo = TOPO_STATES[timerState];
 
   const subjectColor = (() => {
     if (!subject) return "rgba(255,255,255,0.45)";
@@ -56,11 +71,6 @@ export default function FocusPage() {
     if (userSub) return userSub.label;
     const legacySub = SUBJECTS[subject as SubjectKey];
     return legacySub?.label || subject;
-  })();
-
-  const todaySessionCount = (() => {
-    const today = new Date().toDateString();
-    return sessions.filter((s) => new Date(s.completedAt).toDateString() === today).length;
   })();
 
   const clearTimer = useCallback(() => {
@@ -178,8 +188,11 @@ export default function FocusPage() {
 
   return (
     <div className="fixed inset-0 z-50 focus-canvas focus-canvas-enter overflow-hidden">
-      {/* Background layers */}
-      <div className="absolute inset-0 focus-topology pointer-events-none" aria-hidden />
+      {/* Background layers — animated topology mesh, then a soft vignette
+          so the moving lines never compete with the timer at center. */}
+      <div className="absolute inset-0" aria-hidden>
+        <TopologyBg color={topo.color} backgroundColor={topo.bg} />
+      </div>
       <div className="absolute inset-0 focus-vignette pointer-events-none" aria-hidden />
 
       {/* ── Top-left: context pill ── */}
@@ -256,8 +269,8 @@ export default function FocusPage() {
                   </li>
                 ))}
               </ul>
-              <div className="px-4 py-2.5 border-t border-white/8 text-[11px] text-white/40 leading-relaxed">
-                Sound is on the roadmap. The shape is here; the audio drops in later.
+              <div className="px-4 py-2.5 border-t border-white/8 text-[11px] text-white/40">
+                Ambient sound arrives in a later update.
               </div>
             </div>
           )}
@@ -329,16 +342,6 @@ export default function FocusPage() {
           no tabs, no shortcuts, one thing
         </p>
       </footer>
-
-      {/* ── Bottom-right: today readout ── */}
-      <aside className="absolute bottom-6 right-6 z-10 text-right pointer-events-none select-none">
-        <p className="text-[10px] uppercase tracking-[0.22em] text-white/35">Today</p>
-        <p className="text-xs text-white/60 tabular-nums mt-0.5">
-          {todaySessionCount === 0 ? "First session" : `Session ${todaySessionCount + (timerState !== "idle" ? 1 : 0)}`}
-          <span className="text-white/30"> · </span>
-          {formatTime(todayMinutes)}
-        </p>
-      </aside>
     </div>
   );
 }

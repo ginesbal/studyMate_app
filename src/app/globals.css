@@ -491,41 +491,8 @@
     color: rgba(255, 255, 255, 0.92);
   }
 
-  /* Equilateral triangulated mesh, drawn with three crossed 60° gradient
-     stripes. Pure CSS — no JS, no animation, no CPU. The mask fades the
-     pattern toward the center so the timer reads cleanly. */
-  .focus-topology {
-    background-image:
-      linear-gradient(60deg,
-        transparent 49.7%,
-        rgba(255, 255, 255, 0.045) 49.7% 50.3%,
-        transparent 50.3%),
-      linear-gradient(-60deg,
-        transparent 49.7%,
-        rgba(255, 255, 255, 0.045) 49.7% 50.3%,
-        transparent 50.3%),
-      linear-gradient(90deg,
-        transparent 49.85%,
-        rgba(255, 255, 255, 0.025) 49.85% 50.15%,
-        transparent 50.15%);
-    background-size: 80px 138.56px, 80px 138.56px, 80px 138.56px;
-    /* Radial fade so the center stays uncluttered while the edges keep
-       their technical character. */
-    -webkit-mask-image: radial-gradient(
-      ellipse at center,
-      rgba(0, 0, 0, 0.25) 0%,
-      rgba(0, 0, 0, 0.55) 35%,
-      rgba(0, 0, 0, 1) 80%
-    );
-    mask-image: radial-gradient(
-      ellipse at center,
-      rgba(0, 0, 0, 0.25) 0%,
-      rgba(0, 0, 0, 0.55) 35%,
-      rgba(0, 0, 0, 1) 80%
-    );
-  }
-
-  /* Soft vignette — pulls the eye toward center without a hard edge. */
+  /* Soft vignette — sits over the animated topology so the moving mesh
+     fades toward the edges and never competes with the timer at center. */
   .focus-vignette {
     background:
       radial-gradient(ellipse 90% 70% at 50% 50%,
