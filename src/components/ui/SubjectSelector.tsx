@@ -77,7 +77,7 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
         onClick={() => { if (!disabled) setOpen(!open); }}
         disabled={disabled}
         className={cn(
-          "flex items-center gap-2 px-3.5 py-2 rounded-full text-sm w-full max-w-[260px] border bg-white transition-[background-color,border-color,transform] duration-150 ease-out press",
+          "flex items-center gap-2 px-3.5 py-2 rounded-full text-sm w-full border bg-white transition-[background-color,border-color,transform] duration-150 ease-out press",
           open
             ? "border-baltic-400 ring-2 ring-baltic-400/20"
             : "border-lavender-200 hover:border-lavender-300",

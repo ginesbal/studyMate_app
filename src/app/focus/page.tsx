@@ -56,6 +56,8 @@ export default function FocusPage() {
 
   const [musicOpen, setMusicOpen] = useState(false);
   const musicMenuRef = useRef<HTMLDivElement>(null);
+  const [backdropOpen, setBackdropOpen] = useState(false);
+  const backdropMenuRef = useRef<HTMLDivElement>(null);
 
   const [topoPreset, setTopoPreset] = useState<TopoPresetKey>(() => {
     if (typeof window === "undefined") return "baltic";
@@ -181,16 +183,19 @@ export default function FocusPage() {
   // Clean up interval on unmount
   useEffect(() => () => clearTimer(), [clearTimer]);
 
-  // Music popover — close on outside click + Esc
+  // Top-bar popovers (music, backdrop) — close on outside click + Esc
   useEffect(() => {
-    if (!musicOpen) return;
+    if (!musicOpen && !backdropOpen) return;
     const onClick = (e: MouseEvent) => {
-      if (musicMenuRef.current && !musicMenuRef.current.contains(e.target as Node)) {
-        setMusicOpen(false);
-      }
+      const t = e.target as Node;
+      if (musicMenuRef.current && !musicMenuRef.current.contains(t)) setMusicOpen(false);
+      if (backdropMenuRef.current && !backdropMenuRef.current.contains(t)) setBackdropOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMusicOpen(false);
+      if (e.key === "Escape") {
+        setMusicOpen(false);
+        setBackdropOpen(false);
+      }
     };
     document.addEventListener("mousedown", onClick);
     document.addEventListener("keydown", onKey);
@@ -198,7 +203,7 @@ export default function FocusPage() {
       document.removeEventListener("mousedown", onClick);
       document.removeEventListener("keydown", onKey);
     };
-  }, [musicOpen]);
+  }, [musicOpen, backdropOpen]);
 
   const canBegin = subject !== null;
   const pillSubtitle = task.trim() || subjectLabel || "Ready to focus";
@@ -210,35 +215,80 @@ export default function FocusPage() {
         <TopologyBg color={activePreset.color} backgroundColor={TOPO_BG} />
       </div>
 
-      {/* ── Top-left: context pill ── */}
-      <header className="absolute top-6 left-6 z-10">
-        <div className="focus-panel rounded-full px-4 py-2 flex items-center gap-3">
-          <span className="text-[10px] uppercase tracking-[0.22em] text-steel-400">
-            {timerState === "idle" && "Ready"}
-            {timerState === "running" && "Focusing on"}
-            {timerState === "paused" && "Paused"}
-            {timerState === "done" && "Session complete"}
-            {timerState === "reflecting" && "Reflecting"}
-          </span>
-          <div className="flex items-center gap-2 min-w-0">
-            <div
-              className="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors duration-300"
-              style={{ backgroundColor: subjectColor }}
-              aria-hidden
-            />
-            <span className="text-sm text-baltic-700 truncate max-w-[22ch]">
-              {pillSubtitle}
+      {/* ── Top-left: context pill — only once a session is underway ── */}
+      {timerState !== "idle" && (
+        <header className="absolute top-6 left-6 z-10 focus-stage-enter">
+          <div className="focus-panel rounded-full px-4 py-2 flex items-center gap-3">
+            <span className="text-[10px] uppercase tracking-[0.22em] text-steel-400">
+              {timerState === "running" && "Focusing on"}
+              {timerState === "paused" && "Paused"}
+              {timerState === "done" && "Session complete"}
+              {timerState === "reflecting" && "Reflecting"}
             </span>
+            <div className="flex items-center gap-2 min-w-0">
+              <div
+                className="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors duration-300"
+                style={{ backgroundColor: subjectColor }}
+                aria-hidden
+              />
+              <span className="text-sm text-baltic-700 truncate max-w-[22ch]">
+                {pillSubtitle}
+              </span>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
-      {/* ── Top-right: music + exit ── */}
+      {/* ── Top-right: backdrop + music + exit ── */}
       <div className="absolute top-6 right-6 z-20 flex items-center gap-2">
+        {/* Backdrop color */}
+        <div className="relative" ref={backdropMenuRef}>
+          <button
+            onClick={() => { setBackdropOpen((v) => !v); setMusicOpen(false); }}
+            aria-label="Backdrop color"
+            aria-expanded={backdropOpen}
+            title="Backdrop color"
+            className="focus-btn !p-0 w-10 h-10 !rounded-full"
+          >
+            <span className="w-4 h-4 rounded-full border border-black/10" style={{ backgroundColor: activePreset.hex }} />
+          </button>
+          {backdropOpen && (
+            <div
+              className="absolute right-0 mt-2 w-52 rounded-2xl overflow-hidden bg-white border border-lavender-200 shadow-[0_16px_36px_-12px_rgba(38,45,64,0.28)] dropdown-enter"
+              style={{ transformOrigin: "top right" }}
+              role="menu"
+            >
+              <div className="px-4 pt-3 pb-2 border-b border-lavender-100">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-steel-400">Backdrop</p>
+              </div>
+              <ul className="py-1">
+                {TOPO_PRESETS.map((p) => (
+                  <li key={p.key}>
+                    <button
+                      onClick={() => { selectPreset(p.key); setBackdropOpen(false); }}
+                      role="menuitemradio"
+                      aria-checked={topoPreset === p.key}
+                      className="w-full flex items-center gap-3 px-4 py-2 hover:bg-lavender-50 transition-colors duration-150"
+                    >
+                      <span className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.hex }} />
+                      <span className="text-sm text-baltic-700 flex-1 text-left">{p.label}</span>
+                      {topoPreset === p.key && (
+                        <svg width={14} height={14} viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="text-baltic-600 flex-shrink-0">
+                          <path d="M2.5 7.5L6 11l5.5-7" />
+                        </svg>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
         {/* Music */}
         <div className="relative" ref={musicMenuRef}>
           <button
-            onClick={() => setMusicOpen((v) => !v)}
+            onClick={() => { setMusicOpen((v) => !v); setBackdropOpen(false); }}
             aria-label="Ambient sound"
             aria-expanded={musicOpen}
             className="focus-btn !p-0 w-10 h-10 !rounded-full"
@@ -307,8 +357,6 @@ export default function FocusPage() {
             onSubjectChange={setSubject}
             task={task}
             onTaskChange={setTask}
-            preset={topoPreset}
-            onPresetChange={selectPreset}
             canBegin={canBegin}
             onBegin={startTimer}
           />
@@ -367,8 +415,6 @@ interface SetupStageProps {
   onSubjectChange: (s: string | null) => void;
   task: string;
   onTaskChange: (s: string) => void;
-  preset: TopoPresetKey;
-  onPresetChange: (k: TopoPresetKey) => void;
   canBegin: boolean;
   onBegin: () => void;
 }
@@ -377,121 +423,65 @@ function SetupStage({
   duration, onDurationChange,
   subject, onSubjectChange,
   task, onTaskChange,
-  preset, onPresetChange,
   canBegin, onBegin,
 }: SetupStageProps) {
+  const [showTask, setShowTask] = useState(false);
+  const showTaskInput = showTask || task.length > 0;
+
   return (
-    <div className="focus-stage-enter flex flex-col items-center w-full max-w-md">
-      {/* Decorative concentric ring with duration in center */}
-      <div className="relative" style={{ width: 320, height: 320 }}>
-        <svg width={320} height={320} viewBox="0 0 320 320" className="absolute inset-0">
-          {/* Outer hairline */}
-          <circle cx="160" cy="160" r="156" fill="none" stroke="#dfe3ec" strokeWidth="0.5" />
-          {/* 60 tick marks */}
-          {Array.from({ length: 60 }).map((_, i) => {
-            const angle = (i * 6 - 90) * (Math.PI / 180);
-            const isMajor = i % 5 === 0;
-            const outerR = 156;
-            const innerR = isMajor ? 144 : 150;
-            const x1 = 160 + innerR * Math.cos(angle);
-            const y1 = 160 + innerR * Math.sin(angle);
-            const x2 = 160 + outerR * Math.cos(angle);
-            const y2 = 160 + outerR * Math.sin(angle);
-            return (
-              <line
-                key={i}
-                x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={isMajor ? "#9faac6" : "#c5c9d3"}
-                strokeWidth={isMajor ? 1.25 : 0.6}
-                strokeLinecap="round"
-              />
-            );
-          })}
-          {/* Duration indicator arc — proportional to chosen length */}
-          {(() => {
-            const pct = Math.min(duration / 120, 1);
-            const r = 132;
-            const circumference = 2 * Math.PI * r;
-            const offset = circumference * (1 - pct);
-            return (
-              <circle
-                cx="160" cy="160" r={r}
-                fill="none"
-                stroke="#60729f"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeDasharray={circumference}
-                strokeDashoffset={offset}
-                className="-rotate-90 origin-center"
-                style={{ transition: "stroke-dashoffset 400ms var(--ease-out)" }}
-              />
-            );
-          })()}
-          {/* Inner hairline */}
-          <circle cx="160" cy="160" r="115" fill="none" stroke="#e2e4e9" strokeWidth="0.5" />
-        </svg>
+    <div className="focus-stage-enter w-full max-w-sm">
+      {/* Calm solid card so the moving mesh stops competing with the inputs */}
+      <div className="rounded-3xl bg-white border border-lavender-200 shadow-[0_18px_44px_-14px_rgba(38,45,64,0.22)] p-7">
+        {/* How long */}
+        <DurationPicker value={duration} onChange={onDurationChange} />
 
-        <div className="absolute inset-0 flex items-center justify-center">
-          <DurationPicker value={duration} onChange={onDurationChange} />
-        </div>
-      </div>
+        <div className="h-px bg-lavender-100 my-6" />
 
-      {/* Subject row */}
-      <div className="w-full mt-7">
+        {/* What */}
         <SubjectSelector value={subject} onChange={onSubjectChange} />
-      </div>
 
-      {/* Task field — optional one-liner powering the FOCUSING ON pill */}
-      <div className="w-full mt-3">
-        <input
-          type="text"
-          value={task}
-          onChange={(e) => onTaskChange(e.target.value)}
-          placeholder="What are you working on? (optional)"
-          maxLength={60}
-          className="w-full px-4 py-2 text-sm rounded-full bg-white border border-lavender-200 text-baltic-800 placeholder:text-steel-400 outline-none focus:border-baltic-400 focus:ring-2 focus:ring-baltic-400/20 transition-colors duration-150"
-        />
-      </div>
-
-      {/* Backdrop preset — palette color for the topology mesh */}
-      <div className="w-full mt-4 flex items-center justify-center gap-3">
-        <span className="text-[10px] uppercase tracking-[0.2em] text-steel-400">Backdrop</span>
-        <div className="flex items-center gap-1.5" role="group" aria-label="Topology color">
-          {TOPO_PRESETS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              onClick={() => onPresetChange(p.key)}
-              aria-label={p.label}
-              aria-pressed={preset === p.key}
-              title={p.label}
-              className={cn(
-                "w-5 h-5 rounded-full transition-transform duration-150 press",
-                preset === p.key
-                  ? "ring-2 ring-offset-2 ring-baltic-400 ring-offset-[#eff1f5]"
-                  : "hover:scale-110"
-              )}
-              style={{ backgroundColor: p.hex }}
+        {/* Optional note — disclosed on demand to keep the default view calm */}
+        <div className="mt-3">
+          {showTaskInput ? (
+            <input
+              type="text"
+              autoFocus={showTask && task.length === 0}
+              value={task}
+              onChange={(e) => onTaskChange(e.target.value)}
+              placeholder="What are you working on?"
+              maxLength={60}
+              className="w-full px-4 py-2 text-sm rounded-full bg-white border border-lavender-200 text-baltic-800 placeholder:text-steel-400 outline-none focus:border-baltic-400 focus:ring-2 focus:ring-baltic-400/20 transition-colors duration-150"
             />
-          ))}
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowTask(true)}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs text-steel-400 hover:text-baltic-600 transition-colors duration-150"
+            >
+              <svg width={12} height={12} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+                <path d="M6 2v8M2 6h8" />
+              </svg>
+              Add what you&apos;re working on
+            </button>
+          )}
         </div>
+
+        {/* Begin */}
+        <button
+          onClick={onBegin}
+          disabled={!canBegin}
+          className="mt-6 w-full focus-btn focus-btn-primary !py-3 text-[15px]"
+        >
+          <svg width={14} height={14} viewBox="0 0 14 14" fill="none">
+            <polygon points="3,2 12,7 3,12" fill="currentColor" />
+          </svg>
+          Begin focusing
+        </button>
+
+        {!canBegin && (
+          <p className="mt-2.5 text-center text-xs text-steel-400">Pick a subject to begin</p>
+        )}
       </div>
-
-      {/* Begin */}
-      <button
-        onClick={onBegin}
-        disabled={!canBegin}
-        className="mt-6 focus-btn focus-btn-primary !px-7 !py-3 text-[15px]"
-      >
-        <svg width={14} height={14} viewBox="0 0 14 14" fill="none">
-          <polygon points="3,2 12,7 3,12" fill="currentColor" />
-        </svg>
-        Begin focusing
-      </button>
-
-      {!canBegin && (
-        <p className="mt-3 text-xs text-steel-400">Pick a subject to begin</p>
-      )}
     </div>
   );
 }
@@ -600,6 +590,14 @@ function SessionStage({
           </svg>
         </div>
 
+        {/* Soft scrim so the countdown stays legible over the moving mesh */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" aria-hidden>
+          <div
+            className="w-60 h-60 rounded-full"
+            style={{ background: "radial-gradient(closest-side, rgba(239,241,245,0.92), rgba(239,241,245,0))" }}
+          />
+        </div>
+
         {/* Center readout */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <p
@@ -697,7 +695,7 @@ function ReflectionStage({
   onSave, onSkip,
 }: ReflectionStageProps) {
   return (
-    <div className="focus-stage-enter focus-panel rounded-2xl p-8 w-full max-w-md flex flex-col items-center">
+    <div className="focus-stage-enter rounded-3xl bg-white border border-lavender-200 shadow-[0_18px_44px_-14px_rgba(38,45,64,0.22)] p-8 w-full max-w-sm flex flex-col items-center">
       {/* Session summary */}
       <div className="flex items-center gap-2 mb-1">
         <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: subjectColor }} />
