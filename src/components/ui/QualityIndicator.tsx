@@ -81,44 +81,47 @@ export function QualitySelector({ value, onChange, size = 32 }: QualitySelectorP
       <div className="flex items-center gap-4">
         {qualities.map((q) => {
           const selected = value === q;
+          const strokeColor = selected ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.30)";
+          const fillColor = selected ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.18)";
           return (
             <button
               key={q}
               type="button"
               onClick={() => onChange(q)}
+              aria-label={QUALITY_LEVELS[q].label}
+              aria-pressed={selected}
               className={cn(
-                "relative rounded-full p-2 transition-smooth",
+                "relative rounded-full p-2 transition-[background-color,transform] duration-150 ease-out press",
                 selected
-                  ? "bg-baltic-50 dark:bg-baltic-900/50 ring-2 ring-baltic-400/40"
-                  : "hover:bg-lavender-50 dark:hover:bg-lavender-900"
+                  ? "bg-white/10 ring-1 ring-white/30"
+                  : "hover:bg-white/5"
               )}
             >
               <svg width={size} height={size} viewBox="0 0 16 16">
                 <circle
                   cx="8" cy="8" r="7" fill="none"
-                  stroke={selected ? "#60729f" : "#c5c9d3"}
+                  stroke={strokeColor}
                   strokeWidth="1.5"
                 />
                 {q === 2 && (
-                  <path d="M8 15 A7 7 0 0 1 1 8 L8 8 Z" fill={selected ? "#808eb3" : "#c5c9d3"} />
+                  <path d="M8 15 A7 7 0 0 1 1 8 L8 8 Z" fill={fillColor} />
                 )}
                 {q === 3 && (
-                  <path d="M8 1 A7 7 0 0 0 8 15 L8 8 Z" fill={selected ? "#60729f" : "#c5c9d3"} />
+                  <path d="M8 1 A7 7 0 0 0 8 15 L8 8 Z" fill={fillColor} />
                 )}
                 {q === 4 && (
-                  <circle cx="8" cy="8" r="6" fill={selected ? "#4d5b80" : "#c5c9d3"} />
+                  <circle cx="8" cy="8" r="6" fill={fillColor} />
                 )}
               </svg>
             </button>
           );
         })}
       </div>
-      {/* Label for selected quality */}
       <div className="h-5">
         {value && (
-          <p className="text-xs font-medium text-baltic-600 dark:text-baltic-300 text-center">
-            {QUALITY_LEVELS[value].label}
-            <span className="text-steel-400 font-normal"> — {QUALITY_LEVELS[value].description}</span>
+          <p className="text-xs text-white/85 text-center">
+            <span className="font-medium">{QUALITY_LEVELS[value].label}</span>
+            <span className="text-white/45"> · {QUALITY_LEVELS[value].description}</span>
           </p>
         )}
       </div>

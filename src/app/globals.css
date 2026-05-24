@@ -462,9 +462,14 @@
     .progress-ring-circle,
     .dropdown-enter,
     .modal-backdrop-enter,
-    .modal-panel-enter {
+    .modal-panel-enter,
+    .focus-canvas-enter,
+    .focus-stage-enter,
+    .focus-tick-enter,
+    .sweep-active {
       animation: none !important;
     }
+    .focus-tick-enter { opacity: 1 !important; }
     .paper-card {
       transition: none !important;
       transform: none !important;
@@ -472,6 +477,155 @@
     .press:active {
       transform: none !important;
     }
+  }
+
+  /* ────────────────────────────────────────────────────────
+     Focus canvas — dark, quiet, geometric. One thing.
+     ──────────────────────────────────────────────────────── */
+
+  /* Almost-black base with a faint navy lift so the topology lines
+     have something to read against. Forced dark regardless of theme:
+     the focus page is its own space. */
+  .focus-canvas {
+    background-color: #0a0d14;
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  /* Equilateral triangulated mesh, drawn with three crossed 60° gradient
+     stripes. Pure CSS — no JS, no animation, no CPU. The mask fades the
+     pattern toward the center so the timer reads cleanly. */
+  .focus-topology {
+    background-image:
+      linear-gradient(60deg,
+        transparent 49.7%,
+        rgba(255, 255, 255, 0.045) 49.7% 50.3%,
+        transparent 50.3%),
+      linear-gradient(-60deg,
+        transparent 49.7%,
+        rgba(255, 255, 255, 0.045) 49.7% 50.3%,
+        transparent 50.3%),
+      linear-gradient(90deg,
+        transparent 49.85%,
+        rgba(255, 255, 255, 0.025) 49.85% 50.15%,
+        transparent 50.15%);
+    background-size: 80px 138.56px, 80px 138.56px, 80px 138.56px;
+    /* Radial fade so the center stays uncluttered while the edges keep
+       their technical character. */
+    -webkit-mask-image: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 0.25) 0%,
+      rgba(0, 0, 0, 0.55) 35%,
+      rgba(0, 0, 0, 1) 80%
+    );
+    mask-image: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 0.25) 0%,
+      rgba(0, 0, 0, 0.55) 35%,
+      rgba(0, 0, 0, 1) 80%
+    );
+  }
+
+  /* Soft vignette — pulls the eye toward center without a hard edge. */
+  .focus-vignette {
+    background:
+      radial-gradient(ellipse 90% 70% at 50% 50%,
+        transparent 0%,
+        rgba(0, 0, 0, 0.35) 100%);
+  }
+
+  /* Canvas entrance — the dark surface fades in once on mount so
+     navigating from a light page doesn't slam to black. */
+  @keyframes focus-canvas-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .focus-canvas-enter {
+    animation: focus-canvas-in 260ms var(--ease-out);
+  }
+
+  /* Stage swap — between idle / running / done / reflecting.
+     Subtle: opacity + tiny lift, nothing splashy. Per Emil:
+     entrances use ease-out, never scale-from-0. */
+  @keyframes focus-stage-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .focus-stage-enter {
+    animation: focus-stage-in 240ms var(--ease-out);
+  }
+
+  /* Focus surface — translucent panels (popover, reflection card)
+     that sit on the canvas. Glassy but not gimmicky: a single
+     well-tuned panel color and one soft border. */
+  .focus-panel {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  /* Focus button — pill, light-on-dark. Press feedback per Emil. */
+  .focus-btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-sm font-medium;
+    background-color: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    transition: background-color 160ms var(--ease-out),
+                border-color 160ms var(--ease-out),
+                transform 160ms var(--ease-out);
+  }
+
+  .focus-btn:hover {
+    background-color: rgba(255, 255, 255, 0.13);
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+
+  .focus-btn:active {
+    transform: scale(0.97);
+  }
+
+  .focus-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .focus-btn:disabled:active {
+    transform: none;
+  }
+
+  /* Primary action — the one bright button (Begin, Reflect, Save). */
+  .focus-btn-primary {
+    background-color: rgba(255, 255, 255, 0.96);
+    color: #0a0d14;
+    border-color: transparent;
+  }
+
+  .focus-btn-primary:hover {
+    background-color: rgb(255, 255, 255);
+  }
+
+  .focus-btn-primary:disabled {
+    background-color: rgba(255, 255, 255, 0.20);
+    color: rgba(255, 255, 255, 0.45);
+  }
+
+  /* Tick reveal — used on timer face when a session starts.
+     Reduced motion strips this. */
+  @keyframes focus-tick-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .focus-tick-enter {
+    animation: focus-tick-in 80ms var(--ease-out) backwards;
   }
 
   /* ─── Journal ruled-line background ─── */

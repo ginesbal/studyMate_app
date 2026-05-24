@@ -1,33 +1,31 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useFocus, useSubjects } from "@/lib/contexts";
 import { SUBJECTS, type SubjectKey, type FocusQuality } from "@/lib/types";
 import { cn, formatTime } from "@/lib/utils";
-import Button from "@/components/ui/Button";
-import ProgressRing from "@/components/ui/ProgressRing";
 import { QualitySelector } from "@/components/ui/QualityIndicator";
 import DurationPicker from "@/components/ui/DurationPicker";
 import SubjectSelector from "@/components/ui/SubjectSelector";
 
-const TopologyBg = dynamic(() => import("@/components/ui/TopologyBg"), { ssr: false });
-
-const TOPO_STATES = {
-  idle:       { color: 0x808eb3, bg: 0xeff1f5 },
-  running:    { color: 0x808eb3, bg: 0xeff1f5 },
-  paused:     { color: 0xa8aebd, bg: 0xeff1f5 },
-  done:       { color: 0x76946b, bg: 0xf1f4f0 },
-  reflecting: { color: 0x808eb3, bg: 0xeff1f5 },
-} as const;
-
 type TimerState = "idle" | "running" | "paused" | "done" | "reflecting";
 
+const MUSIC_OPTIONS = [
+  { id: "brown",  label: "Brown noise",  desc: "Low, warm, hush" },
+  { id: "pink",   label: "Pink noise",   desc: "Balanced static" },
+  { id: "rain",   label: "Rain",         desc: "Wet pavement, soft" },
+  { id: "lofi",   label: "Lofi loop",    desc: "Tape, no vocals" },
+] as const;
+
 export default function FocusPage() {
-  const { addSession } = useFocus();
+  const router = useRouter();
+  const { addSession, sessions, todayMinutes } = useFocus();
   const { getSubject } = useSubjects();
+
   const [duration, setDuration] = useState(25);
   const [subject, setSubject] = useState<string | null>(null);
+  const [task, setTask] = useState("");
   const [timerState, setTimerState] = useState<TimerState>("idle");
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -36,21 +34,20 @@ export default function FocusPage() {
   const [reflectionNote, setReflectionNote] = useState("");
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
 
+  const [musicOpen, setMusicOpen] = useState(false);
+  const musicMenuRef = useRef<HTMLDivElement>(null);
+
   const totalSeconds = duration * 60;
   const progress = ((totalSeconds - secondsLeft) / totalSeconds) * 100;
-
   const minutes = Math.floor(secondsLeft / 60);
   const seconds = secondsLeft % 60;
 
-  const isFullscreen = timerState === "running" || timerState === "paused" || timerState === "done" || timerState === "reflecting";
-  const topoColors = TOPO_STATES[timerState];
-
   const subjectColor = (() => {
-    if (!subject) return "#60729f";
+    if (!subject) return "rgba(255,255,255,0.45)";
     const userSub = getSubject(subject);
     if (userSub) return userSub.color;
     const legacySub = SUBJECTS[subject as SubjectKey];
-    return legacySub?.color || "#60729f";
+    return legacySub?.color || "rgba(255,255,255,0.45)";
   })();
 
   const subjectLabel = (() => {
@@ -59,6 +56,11 @@ export default function FocusPage() {
     if (userSub) return userSub.label;
     const legacySub = SUBJECTS[subject as SubjectKey];
     return legacySub?.label || subject;
+  })();
+
+  const todaySessionCount = (() => {
+    const today = new Date().toDateString();
+    return sessions.filter((s) => new Date(s.completedAt).toDateString() === today).length;
   })();
 
   const clearTimer = useCallback(() => {
@@ -88,7 +90,7 @@ export default function FocusPage() {
     setTimerState("paused");
   }, [clearTimer]);
 
-  const resetTimer = useCallback(() => {
+  const resetToIdle = useCallback(() => {
     clearTimer();
     setTimerState("idle");
     setSecondsLeft(duration * 60);
@@ -96,13 +98,15 @@ export default function FocusPage() {
     setReflectionNote("");
   }, [clearTimer, duration]);
 
-  const exitFocus = useCallback(() => {
+  const exitToDashboard = useCallback(() => {
     clearTimer();
-    setTimerState("idle");
-    setSecondsLeft(duration * 60);
-    setReflectionQuality(null);
-    setReflectionNote("");
-  }, [clearTimer, duration]);
+    router.push("/dashboard");
+  }, [clearTimer, router]);
+
+  const addFiveMinutes = useCallback(() => {
+    setDuration((d) => Math.min(d + 5, 240));
+    setSecondsLeft((s) => s + 5 * 60);
+  }, []);
 
   const beginReflection = useCallback(() => {
     const elapsed = Math.max(Math.round((totalSeconds - secondsLeft) / 60), 1);
@@ -110,297 +114,594 @@ export default function FocusPage() {
     setTimerState("reflecting");
   }, [totalSeconds, secondsLeft]);
 
-  const defaultSubject = subject || "Mathematics";
-
   const saveWithReflection = useCallback(() => {
+    if (!subject) return;
     addSession(
-      defaultSubject,
+      subject,
       elapsedMinutes,
-      reflectionQuality ? { quality: reflectionQuality, ...(reflectionNote.trim() ? { note: reflectionNote.trim() } : {}) } : undefined
+      reflectionQuality
+        ? { quality: reflectionQuality, ...(reflectionNote.trim() ? { note: reflectionNote.trim() } : {}) }
+        : undefined
     );
-    resetTimer();
-  }, [defaultSubject, elapsedMinutes, reflectionQuality, reflectionNote, addSession, resetTimer]);
+    setTask("");
+    resetToIdle();
+  }, [subject, elapsedMinutes, reflectionQuality, reflectionNote, addSession, resetToIdle]);
 
   const skipReflection = useCallback(() => {
-    addSession(defaultSubject, elapsedMinutes);
-    resetTimer();
-  }, [defaultSubject, elapsedMinutes, addSession, resetTimer]);
+    if (!subject) return;
+    addSession(subject, elapsedMinutes);
+    setTask("");
+    resetToIdle();
+  }, [subject, elapsedMinutes, addSession, resetToIdle]);
 
-  useEffect(() => {
-    return () => clearTimer();
-  }, [clearTimer]);
+  // Log a completed session straight from the done screen, skipping the
+  // reflection step. The work happened — record it regardless.
+  const finishWithoutReflection = useCallback(() => {
+    if (!subject) return;
+    const elapsed = Math.max(Math.round((totalSeconds - secondsLeft) / 60), 1);
+    addSession(subject, elapsed);
+    setTask("");
+    resetToIdle();
+  }, [subject, totalSeconds, secondsLeft, addSession, resetToIdle]);
 
+  // Keep secondsLeft in sync when duration changes during setup
   useEffect(() => {
     if (timerState === "idle") {
       setSecondsLeft(duration * 60);
     }
   }, [duration, timerState]);
 
+  // Clean up interval on unmount
+  useEffect(() => () => clearTimer(), [clearTimer]);
+
+  // Music popover — close on outside click + Esc
+  useEffect(() => {
+    if (!musicOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (musicMenuRef.current && !musicMenuRef.current.contains(e.target as Node)) {
+        setMusicOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMusicOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [musicOpen]);
+
+  const canBegin = subject !== null;
+  const pillSubtitle = task.trim() || subjectLabel || "Ready to focus";
+
   return (
-    <>
-      {/* Fullscreen focus overlay */}
-      {isFullscreen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0">
-            <TopologyBg
-              color={topoColors.color}
-              backgroundColor={topoColors.bg}
+    <div className="fixed inset-0 z-50 focus-canvas focus-canvas-enter overflow-hidden">
+      {/* Background layers */}
+      <div className="absolute inset-0 focus-topology pointer-events-none" aria-hidden />
+      <div className="absolute inset-0 focus-vignette pointer-events-none" aria-hidden />
+
+      {/* ── Top-left: context pill ── */}
+      <header className="absolute top-6 left-6 z-10">
+        <div className="focus-panel rounded-full px-4 py-2 flex items-center gap-3">
+          <span className="text-[10px] uppercase tracking-[0.22em] text-white/45">
+            {timerState === "idle" && "Ready"}
+            {timerState === "running" && "Focusing on"}
+            {timerState === "paused" && "Paused"}
+            {timerState === "done" && "Session complete"}
+            {timerState === "reflecting" && "Reflecting"}
+          </span>
+          <div className="flex items-center gap-2 min-w-0">
+            <div
+              className="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors duration-300"
+              style={{ backgroundColor: subjectColor }}
+              aria-hidden
             />
-          </div>
-
-          {/* Exit button */}
-          <button
-            onClick={exitFocus}
-            className="absolute top-6 right-6 z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium text-baltic-600 dark:text-baltic-300 bg-white/80 dark:bg-lavender-900/80 backdrop-blur-sm shadow-sm hover:bg-white dark:hover:bg-lavender-900 transition-smooth"
-          >
-            <svg width={14} height={14} viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
-              <path d="M10.5 3.5L3.5 10.5M3.5 3.5l7 7" />
-            </svg>
-            Exit
-          </button>
-
-          {/* Timer + controls — centered */}
-          <div className="relative z-10 flex flex-col items-center">
-            {timerState === "reflecting" ? (
-              <div className="flex flex-col items-center reflection-enter bg-white/80 dark:bg-lavender-900/80 backdrop-blur-sm rounded-2xl p-8 shadow-lg">
-                <div className="flex items-center gap-2 mb-6">
-                  <div
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: subjectColor }}
-                  />
-                  <span className="text-sm text-baltic-700 dark:text-baltic-300">
-                    {formatTime(elapsedMinutes)}{subjectLabel ? ` · ${subjectLabel}` : ""}
-                  </span>
-                </div>
-
-                <h2 className="text-title text-baltic-800 dark:text-baltic-100 mb-5">
-                  How focused were you?
-                </h2>
-
-                <QualitySelector
-                  value={reflectionQuality}
-                  onChange={setReflectionQuality}
-                  size={36}
-                />
-
-                <div className="w-full max-w-sm mt-6">
-                  <input
-                    type="text"
-                    value={reflectionNote}
-                    onChange={(e) => setReflectionNote(e.target.value)}
-                    maxLength={80}
-                    placeholder="What clicked? (optional)"
-                    className="w-full px-3 py-2 text-sm text-center rounded-xl border border-lavender-200 dark:border-lavender-700 bg-white dark:bg-lavender-900 text-baltic-800 dark:text-baltic-100 placeholder:text-steel-400 outline-none focus:ring-2 focus:ring-baltic-400/30 focus:border-baltic-400 transition-smooth"
-                  />
-                </div>
-
-                <div className="flex items-center gap-3 mt-6">
-                  <Button onClick={saveWithReflection} disabled={!reflectionQuality}>
-                    Save reflection
-                  </Button>
-                  <Button variant="ghost" onClick={skipReflection}>
-                    Skip
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* Timer face */}
-                <div className="relative" style={{ width: 280, height: 280 }}>
-                  <svg
-                    width={280}
-                    height={280}
-                    viewBox="0 0 280 280"
-                    className="absolute inset-0"
-                  >
-                    {Array.from({ length: 60 }).map((_, i) => {
-                      const angle = (i * 6 - 90) * (Math.PI / 180);
-                      const isMajor = i % 5 === 0;
-                      const outerR = 138;
-                      const innerR = isMajor ? 129 : 132;
-                      const x1 = 140 + innerR * Math.cos(angle);
-                      const y1 = 140 + innerR * Math.sin(angle);
-                      const x2 = 140 + outerR * Math.cos(angle);
-                      const y2 = 140 + outerR * Math.sin(angle);
-                      const isActive = timerState === "running" || timerState === "paused";
-                      return (
-                        <line
-                          key={i}
-                          x1={x1} y1={y1} x2={x2} y2={y2}
-                          stroke="currentColor"
-                          strokeWidth={isMajor ? 1.5 : 0.75}
-                          strokeLinecap="round"
-                          className={cn(
-                            isMajor
-                              ? "text-baltic-300 dark:text-baltic-600"
-                              : "text-lavender-200 dark:text-lavender-700",
-                            isActive && "tick-enter"
-                          )}
-                          style={isActive ? { animationDelay: `${i * 10}ms` } : undefined}
-                        />
-                      );
-                    })}
-                  </svg>
-
-                  {/* Sweep hand */}
-                  <div
-                    className={cn(
-                      "absolute inset-0 pointer-events-none",
-                      (timerState === "running" || timerState === "paused") && "sweep-active",
-                    )}
-                    style={{
-                      opacity: timerState === "running" || timerState === "paused" ? 1 : 0,
-                      animationPlayState: timerState === "paused" ? "paused" : "running",
-                      transition: "opacity 0.3s ease",
-                    }}
-                  >
-                    <svg width={280} height={280} viewBox="0 0 280 280">
-                      <line x1={140} y1={140} x2={140} y2={16} stroke="#60729f" strokeWidth={1} strokeLinecap="round" opacity={0.5} />
-                      <circle cx={140} cy={140} r={2} fill="#60729f" opacity={0.5} />
-                    </svg>
-                  </div>
-
-                  {/* Progress ring */}
-                  <div className="absolute inset-[12px]">
-                    <ProgressRing
-                      progress={progress}
-                      size={256}
-                      strokeWidth={10}
-                      color={timerState === "done" ? "#76946b" : "#60729f"}
-                      trackColor={timerState === "done" ? "#c8d4c4" : "#e2e4e9"}
-                    >
-                      <div className="text-center">
-                        <p className={cn(
-                          "text-5xl font-light tracking-tight tabular-nums",
-                          timerState === "done"
-                            ? "text-ash-600 dark:text-ash-400"
-                            : "text-baltic-800 dark:text-baltic-100",
-                        )}>
-                          {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
-                        </p>
-                        {timerState === "done" ? (
-                          <p className="text-xs text-ash-500 font-medium mt-1">Complete</p>
-                        ) : (
-                          <p className="text-xs text-steel-400 mt-1">
-                            {timerState === "paused" ? "Paused" : "Focusing"}
-                          </p>
-                        )}
-                      </div>
-                    </ProgressRing>
-                  </div>
-                </div>
-
-                {/* Controls */}
-                <div className="flex items-center gap-3 mt-6">
-                  {timerState === "running" && (
-                    <>
-                      <Button variant="secondary" onClick={pauseTimer}>Pause</Button>
-                      <Button variant="ghost" onClick={resetTimer}>Reset</Button>
-                    </>
-                  )}
-                  {timerState === "paused" && (
-                    <>
-                      <Button onClick={startTimer}>Resume</Button>
-                      <Button variant="ghost" onClick={resetTimer}>Reset</Button>
-                    </>
-                  )}
-                  {timerState === "done" && (
-                    <Button onClick={beginReflection}>Reflect on session</Button>
-                  )}
-                </div>
-
-                {subjectLabel && (
-                  <div className="flex items-center gap-2 mt-4">
-                    <div
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: subjectColor }}
-                    />
-                    <span className="text-xs text-steel-400">
-                      {subjectLabel}
-                    </span>
-                  </div>
-                )}
-              </>
-            )}
+            <span className="text-sm text-white/90 truncate max-w-[22ch]">
+              {pillSubtitle}
+            </span>
           </div>
         </div>
-      )}
+      </header>
 
-      {/* Normal page content — visible when idle */}
-      <div className={cn("relative", isFullscreen && "hidden")}>
-        {/* Decorative blobs */}
-        <div className="absolute -top-8 -left-16 w-40 h-40 blob-3 bg-lavender-200/20 dark:bg-lavender-700/10 float-medium pointer-events-none" />
-        <div className="absolute top-48 -right-20 w-32 h-32 blob-1 bg-baltic-200/15 dark:bg-baltic-700/10 float-slow pointer-events-none" />
-
-        <div className="max-w-lg mx-auto">
-          {/* Timer setup */}
-          <div className="card-base rounded-2xl p-8 flex flex-col items-center">
-            {/* Decorative ring with tick marks */}
-            <div className="relative" style={{ width: 300, height: 300 }}>
-              <svg width={300} height={300} viewBox="0 0 300 300" className="absolute inset-0">
-                <circle cx="150" cy="150" r="146" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-lavender-200 dark:text-lavender-700" />
-                {Array.from({ length: 60 }).map((_, i) => {
-                  const angle = (i * 6 - 90) * (Math.PI / 180);
-                  const isMajor = i % 5 === 0;
-                  const outerR = 146;
-                  const innerR = isMajor ? 136 : 140;
-                  const x1 = 150 + innerR * Math.cos(angle);
-                  const y1 = 150 + innerR * Math.sin(angle);
-                  const x2 = 150 + outerR * Math.cos(angle);
-                  const y2 = 150 + outerR * Math.sin(angle);
-                  return (
-                    <line
-                      key={i}
-                      x1={x1} y1={y1} x2={x2} y2={y2}
-                      stroke="currentColor"
-                      strokeWidth={isMajor ? 1.5 : 0.5}
-                      strokeLinecap="round"
-                      className={isMajor
-                        ? "text-baltic-300 dark:text-baltic-600"
-                        : "text-lavender-200 dark:text-lavender-700"
-                      }
-                    />
-                  );
-                })}
-                {(() => {
-                  const pct = Math.min(duration / 120, 1);
-                  const r = 126;
-                  const circumference = 2 * Math.PI * r;
-                  const offset = circumference * (1 - pct);
-                  return (
-                    <circle
-                      cx="150" cy="150" r={r}
-                      fill="none" stroke="currentColor" strokeWidth="6" strokeLinecap="round"
-                      strokeDasharray={circumference} strokeDashoffset={offset}
-                      className="text-baltic-400/30 dark:text-baltic-500/30 -rotate-90 origin-center transition-all duration-500"
-                    />
-                  );
-                })()}
-                <circle cx="150" cy="150" r="105" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-lavender-200 dark:text-lavender-700" />
-              </svg>
-
-              <div className="absolute inset-0 flex items-center justify-center">
-                <DurationPicker value={duration} onChange={setDuration} />
+      {/* ── Top-right: music + exit ── */}
+      <div className="absolute top-6 right-6 z-20 flex items-center gap-2">
+        {/* Music */}
+        <div className="relative" ref={musicMenuRef}>
+          <button
+            onClick={() => setMusicOpen((v) => !v)}
+            aria-label="Ambient sound"
+            aria-expanded={musicOpen}
+            className="focus-btn !p-0 w-10 h-10 !rounded-full"
+          >
+            <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 12V3l7-1v9" />
+              <circle cx="4.5" cy="12" r="1.5" />
+              <circle cx="11.5" cy="11" r="1.5" />
+            </svg>
+          </button>
+          {musicOpen && (
+            <div
+              className="absolute right-0 mt-2 w-72 rounded-2xl overflow-hidden dropdown-enter"
+              style={{
+                backgroundColor: "rgba(18, 22, 30, 0.92)",
+                backdropFilter: "blur(16px)",
+                WebkitBackdropFilter: "blur(16px)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                boxShadow: "0 20px 40px -12px rgba(0, 0, 0, 0.6)",
+                transformOrigin: "top right",
+              }}
+              role="menu"
+            >
+              <div className="px-4 pt-3 pb-2 border-b border-white/8">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Ambient</p>
+              </div>
+              <ul>
+                {MUSIC_OPTIONS.map((opt) => (
+                  <li key={opt.id}>
+                    <button
+                      disabled
+                      className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left disabled:cursor-not-allowed group"
+                      role="menuitem"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm text-white/55 truncate">{opt.label}</p>
+                        <p className="text-[11px] text-white/30 truncate">{opt.desc}</p>
+                      </div>
+                      <span className="text-[10px] uppercase tracking-[0.15em] text-white/35 border border-white/10 rounded-full px-1.5 py-0.5 flex-shrink-0">
+                        Soon
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="px-4 py-2.5 border-t border-white/8 text-[11px] text-white/40 leading-relaxed">
+                Sound is on the roadmap. The shape is here; the audio drops in later.
               </div>
             </div>
+          )}
+        </div>
 
-            <div className="w-16 border-t border-lavender-100 dark:border-lavender-800 my-5" />
+        {/* Exit */}
+        <button
+          onClick={exitToDashboard}
+          aria-label="Exit focus mode"
+          className="focus-btn !px-3 !py-2"
+        >
+          <svg width={12} height={12} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+            <path d="M3 3l6 6M9 3l-6 6" />
+          </svg>
+          <span className="text-sm">Exit</span>
+        </button>
+      </div>
 
-            <SubjectSelector value={subject} onChange={setSubject} />
+      {/* ── Center stage ── */}
+      <main className="absolute inset-0 flex items-center justify-center px-6">
+        {timerState === "idle" && (
+          <SetupStage
+            duration={duration}
+            onDurationChange={setDuration}
+            subject={subject}
+            onSubjectChange={setSubject}
+            task={task}
+            onTaskChange={setTask}
+            canBegin={canBegin}
+            onBegin={startTimer}
+          />
+        )}
 
-            <button
-              onClick={startTimer}
-              className="mt-6 w-full py-3.5 rounded-2xl bg-baltic-600 hover:bg-baltic-700 dark:bg-baltic-500 dark:hover:bg-baltic-400 text-white font-semibold text-sm shadow-[0_4px_20px_rgba(38,45,64,0.25)] hover:shadow-[0_6px_28px_rgba(38,45,64,0.35)] transition-smooth flex items-center justify-center gap-2"
-            >
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="10" cy="10" r="8" />
-                <path d="M10 6v4l2.5 2.5" />
-              </svg>
-              Start focusing
-            </button>
-          </div>
+        {(timerState === "running" || timerState === "paused" || timerState === "done") && (
+          <SessionStage
+            timerState={timerState}
+            minutes={minutes}
+            seconds={seconds}
+            duration={duration}
+            progress={progress}
+            onPause={pauseTimer}
+            onResume={startTimer}
+            onReset={resetToIdle}
+            onAddFive={addFiveMinutes}
+            onReflect={beginReflection}
+            onSkipReflection={finishWithoutReflection}
+          />
+        )}
+
+        {timerState === "reflecting" && (
+          <ReflectionStage
+            elapsedMinutes={elapsedMinutes}
+            subjectLabel={subjectLabel}
+            subjectColor={subjectColor}
+            task={task}
+            quality={reflectionQuality}
+            onQualityChange={setReflectionQuality}
+            note={reflectionNote}
+            onNoteChange={setReflectionNote}
+            onSave={saveWithReflection}
+            onSkip={skipReflection}
+          />
+        )}
+      </main>
+
+      {/* ── Bottom-center: mantra ── */}
+      <footer className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
+        <p className="font-script text-base text-white/30 select-none">
+          no tabs, no shortcuts, one thing
+        </p>
+      </footer>
+
+      {/* ── Bottom-right: today readout ── */}
+      <aside className="absolute bottom-6 right-6 z-10 text-right pointer-events-none select-none">
+        <p className="text-[10px] uppercase tracking-[0.22em] text-white/35">Today</p>
+        <p className="text-xs text-white/60 tabular-nums mt-0.5">
+          {todaySessionCount === 0 ? "First session" : `Session ${todaySessionCount + (timerState !== "idle" ? 1 : 0)}`}
+          <span className="text-white/30"> · </span>
+          {formatTime(todayMinutes)}
+        </p>
+      </aside>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────
+// Setup stage — duration ring, subject, task, begin
+// ───────────────────────────────────────────────────────────────
+
+interface SetupStageProps {
+  duration: number;
+  onDurationChange: (n: number) => void;
+  subject: string | null;
+  onSubjectChange: (s: string | null) => void;
+  task: string;
+  onTaskChange: (s: string) => void;
+  canBegin: boolean;
+  onBegin: () => void;
+}
+
+function SetupStage({
+  duration, onDurationChange,
+  subject, onSubjectChange,
+  task, onTaskChange,
+  canBegin, onBegin,
+}: SetupStageProps) {
+  return (
+    <div className="focus-stage-enter flex flex-col items-center w-full max-w-md">
+      {/* Decorative concentric ring with duration in center */}
+      <div className="relative" style={{ width: 320, height: 320 }}>
+        <svg width={320} height={320} viewBox="0 0 320 320" className="absolute inset-0">
+          {/* Outer hairline */}
+          <circle cx="160" cy="160" r="156" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
+          {/* 60 tick marks */}
+          {Array.from({ length: 60 }).map((_, i) => {
+            const angle = (i * 6 - 90) * (Math.PI / 180);
+            const isMajor = i % 5 === 0;
+            const outerR = 156;
+            const innerR = isMajor ? 144 : 150;
+            const x1 = 160 + innerR * Math.cos(angle);
+            const y1 = 160 + innerR * Math.sin(angle);
+            const x2 = 160 + outerR * Math.cos(angle);
+            const y2 = 160 + outerR * Math.sin(angle);
+            return (
+              <line
+                key={i}
+                x1={x1} y1={y1} x2={x2} y2={y2}
+                stroke={isMajor ? "rgba(255,255,255,0.30)" : "rgba(255,255,255,0.12)"}
+                strokeWidth={isMajor ? 1.25 : 0.6}
+                strokeLinecap="round"
+              />
+            );
+          })}
+          {/* Duration indicator arc — proportional to chosen length */}
+          {(() => {
+            const pct = Math.min(duration / 120, 1);
+            const r = 132;
+            const circumference = 2 * Math.PI * r;
+            const offset = circumference * (1 - pct);
+            return (
+              <circle
+                cx="160" cy="160" r={r}
+                fill="none"
+                stroke="rgba(255,255,255,0.55)"
+                strokeWidth="1"
+                strokeLinecap="round"
+                strokeDasharray={circumference}
+                strokeDashoffset={offset}
+                className="-rotate-90 origin-center"
+                style={{ transition: "stroke-dashoffset 400ms var(--ease-out)" }}
+              />
+            );
+          })()}
+          {/* Inner hairline */}
+          <circle cx="160" cy="160" r="115" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="0.5" />
+        </svg>
+
+        <div className="absolute inset-0 flex items-center justify-center">
+          <DurationPicker value={duration} onChange={onDurationChange} />
         </div>
       </div>
-    </>
+
+      {/* Subject row */}
+      <div className="w-full mt-7">
+        <SubjectSelector value={subject} onChange={onSubjectChange} />
+      </div>
+
+      {/* Task field — optional one-liner powering the FOCUSING ON pill */}
+      <div className="w-full mt-3">
+        <div className="relative">
+          <input
+            type="text"
+            value={task}
+            onChange={(e) => onTaskChange(e.target.value)}
+            placeholder="What are you working on? (optional)"
+            maxLength={60}
+            className="w-full px-4 py-2 text-sm rounded-full bg-white/[0.04] border border-white/12 text-white placeholder:text-white/40 outline-none focus:bg-white/[0.07] focus:border-white/30 transition-colors duration-150"
+          />
+        </div>
+      </div>
+
+      {/* Begin */}
+      <button
+        onClick={onBegin}
+        disabled={!canBegin}
+        className="mt-6 focus-btn focus-btn-primary !px-7 !py-3 text-[15px]"
+      >
+        <svg width={14} height={14} viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="3,2 12,7 3,12" fill="currentColor" stroke="none" />
+        </svg>
+        Begin focusing
+      </button>
+
+      {!canBegin && (
+        <p className="mt-3 text-xs text-white/40">Pick a subject to begin</p>
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────
+// Session stage — countdown ring + controls
+// ───────────────────────────────────────────────────────────────
+
+interface SessionStageProps {
+  timerState: "running" | "paused" | "done";
+  minutes: number;
+  seconds: number;
+  duration: number;
+  progress: number;
+  onPause: () => void;
+  onResume: () => void;
+  onReset: () => void;
+  onAddFive: () => void;
+  onReflect: () => void;
+  onSkipReflection: () => void;
+}
+
+function SessionStage({
+  timerState, minutes, seconds, duration, progress,
+  onPause, onResume, onReset, onAddFive, onReflect, onSkipReflection,
+}: SessionStageProps) {
+  const size = 320;
+  const ringR = 144;
+  const ringStroke = 1.5;
+  const ringCircumference = 2 * Math.PI * ringR;
+  const ringOffset = ringCircumference * (1 - progress / 100);
+  const isDone = timerState === "done";
+
+  return (
+    <div className="focus-stage-enter flex flex-col items-center">
+      <div className="relative" style={{ width: size, height: size }}>
+        {/* Tick marks */}
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="absolute inset-0">
+          {Array.from({ length: 60 }).map((_, i) => {
+            const angle = (i * 6 - 90) * (Math.PI / 180);
+            const isMajor = i % 5 === 0;
+            const outerR = 156;
+            const innerR = isMajor ? 146 : 151;
+            const cx = size / 2;
+            const x1 = cx + innerR * Math.cos(angle);
+            const y1 = cx + innerR * Math.sin(angle);
+            const x2 = cx + outerR * Math.cos(angle);
+            const y2 = cx + outerR * Math.sin(angle);
+            return (
+              <line
+                key={i}
+                x1={x1} y1={y1} x2={x2} y2={y2}
+                stroke={isMajor ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.10)"}
+                strokeWidth={isMajor ? 1.25 : 0.6}
+                strokeLinecap="round"
+                className="focus-tick-enter"
+                style={{ animationDelay: `${i * 8}ms` }}
+              />
+            );
+          })}
+
+          {/* Track */}
+          <circle
+            cx={size / 2} cy={size / 2} r={ringR}
+            fill="none"
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth={ringStroke}
+          />
+
+          {/* Progress arc */}
+          <circle
+            cx={size / 2} cy={size / 2} r={ringR}
+            fill="none"
+            stroke={isDone ? "rgba(199, 206, 100, 0.85)" : "rgba(255, 255, 255, 0.95)"}
+            strokeWidth={ringStroke}
+            strokeLinecap="round"
+            strokeDasharray={ringCircumference}
+            strokeDashoffset={ringOffset}
+            className="-rotate-90 origin-center"
+            style={{ transition: "stroke-dashoffset 900ms linear, stroke 300ms ease" }}
+          />
+        </svg>
+
+        {/* Sweep hand — only while actively timing */}
+        <div
+          className={cn(
+            "absolute inset-0 pointer-events-none",
+            (timerState === "running" || timerState === "paused") && "sweep-active",
+          )}
+          style={{
+            opacity: timerState === "running" || timerState === "paused" ? 1 : 0,
+            animationPlayState: timerState === "paused" ? "paused" : "running",
+            transition: "opacity 0.3s ease",
+          }}
+          aria-hidden
+        >
+          <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <line
+              x1={size / 2} y1={size / 2} x2={size / 2} y2={20}
+              stroke="rgba(255,255,255,0.40)"
+              strokeWidth={1}
+              strokeLinecap="round"
+            />
+            <circle cx={size / 2} cy={size / 2} r={2} fill="rgba(255,255,255,0.55)" />
+          </svg>
+        </div>
+
+        {/* Center readout */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <p
+            className={cn(
+              "text-7xl font-extralight tracking-tighter tabular-nums leading-none",
+              isDone ? "text-white/75" : "text-white",
+            )}
+            aria-live="polite"
+          >
+            {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
+          </p>
+          <p className="mt-3 text-[11px] uppercase tracking-[0.22em] text-white/40 tabular-nums">
+            {isDone
+              ? "Complete"
+              : `/ ${String(duration).padStart(2, "0")}:00 · ${timerState === "paused" ? "Paused" : "Focusing"}`
+            }
+          </p>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="flex items-center gap-2 mt-8">
+        {timerState === "running" && (
+          <>
+            <button onClick={onPause} className="focus-btn">
+              <svg width={12} height={12} viewBox="0 0 12 12" fill="currentColor">
+                <rect x="2.5" y="2" width="2.5" height="8" rx="0.5" />
+                <rect x="7" y="2" width="2.5" height="8" rx="0.5" />
+              </svg>
+              Pause
+            </button>
+            <button onClick={onReset} className="focus-btn">
+              <svg width={12} height={12} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 6a4 4 0 1 0 1.5-3.1" />
+                <path d="M2 1.5v3h3" />
+              </svg>
+              Reset
+            </button>
+            <button onClick={onAddFive} className="focus-btn">
+              <span className="tabular-nums">+5 min</span>
+            </button>
+          </>
+        )}
+        {timerState === "paused" && (
+          <>
+            <button onClick={onResume} className="focus-btn focus-btn-primary">
+              <svg width={12} height={12} viewBox="0 0 12 12" fill="currentColor">
+                <polygon points="3,2 10,6 3,10" />
+              </svg>
+              Resume
+            </button>
+            <button onClick={onReset} className="focus-btn">
+              Reset
+            </button>
+            <button onClick={onAddFive} className="focus-btn">
+              <span className="tabular-nums">+5 min</span>
+            </button>
+          </>
+        )}
+        {timerState === "done" && (
+          <>
+            <button onClick={onReflect} className="focus-btn focus-btn-primary">
+              Reflect on session
+            </button>
+            <button onClick={onSkipReflection} className="focus-btn">
+              Skip reflection
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────
+// Reflection stage
+// ───────────────────────────────────────────────────────────────
+
+interface ReflectionStageProps {
+  elapsedMinutes: number;
+  subjectLabel: string | null;
+  subjectColor: string;
+  task: string;
+  quality: FocusQuality | null;
+  onQualityChange: (q: FocusQuality) => void;
+  note: string;
+  onNoteChange: (s: string) => void;
+  onSave: () => void;
+  onSkip: () => void;
+}
+
+function ReflectionStage({
+  elapsedMinutes, subjectLabel, subjectColor, task,
+  quality, onQualityChange, note, onNoteChange,
+  onSave, onSkip,
+}: ReflectionStageProps) {
+  return (
+    <div className="focus-stage-enter focus-panel rounded-2xl p-8 w-full max-w-md flex flex-col items-center">
+      {/* Session summary */}
+      <div className="flex items-center gap-2 mb-1">
+        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: subjectColor }} />
+        <span className="text-xs text-white/55 tabular-nums">
+          {formatTime(elapsedMinutes)}{subjectLabel ? ` · ${subjectLabel}` : ""}
+        </span>
+      </div>
+      {task.trim() && (
+        <p className="text-[11px] text-white/35 mb-5 italic truncate max-w-full">
+          {task.trim()}
+        </p>
+      )}
+      {!task.trim() && <div className="mb-5" />}
+
+      <h2 className="text-lg font-medium text-white mb-6 tracking-tight">
+        How focused were you?
+      </h2>
+
+      <QualitySelector value={quality} onChange={onQualityChange} size={36} />
+
+      <div className="w-full mt-6">
+        <input
+          type="text"
+          value={note}
+          onChange={(e) => onNoteChange(e.target.value)}
+          maxLength={80}
+          placeholder="What clicked? (optional)"
+          className="w-full px-4 py-2 text-sm text-center rounded-full bg-white/[0.04] border border-white/12 text-white placeholder:text-white/35 outline-none focus:bg-white/[0.07] focus:border-white/30 transition-colors duration-150"
+        />
+      </div>
+
+      <div className="flex items-center gap-2 mt-6">
+        <button
+          onClick={onSave}
+          disabled={!quality}
+          className="focus-btn focus-btn-primary !px-5"
+        >
+          Save reflection
+        </button>
+        <button onClick={onSkip} className="focus-btn">
+          Skip
+        </button>
+      </div>
+    </div>
   );
 }
