@@ -7,7 +7,7 @@ import { useFocus, useSubjects } from "@/lib/contexts";
 import { SUBJECTS, type SubjectKey, type FocusQuality } from "@/lib/types";
 import { cn, formatTime } from "@/lib/utils";
 import { QualitySelector } from "@/components/ui/QualityIndicator";
-import DurationPicker from "@/components/ui/DurationPicker";
+import DurationPicker, { DURATION_MAX } from "@/components/ui/DurationPicker";
 import SubjectSelector from "@/components/ui/SubjectSelector";
 
 const TopologyBg = dynamic(() => import("@/components/ui/TopologyBg"), { ssr: false });
@@ -144,8 +144,8 @@ export default function FocusPage() {
   }, [timerState, confirmExit, exitToDashboard]);
 
   const addFiveMinutes = useCallback(() => {
-    setDuration((d) => Math.min(d + 5, 240));
-    setSecondsLeft((s) => s + 5 * 60);
+    setDuration((d) => Math.min(d + 5, DURATION_MAX));
+    setSecondsLeft((s) => Math.min(s + 5 * 60, DURATION_MAX * 60));
   }, []);
 
   // End the session now and move to reflection, recording the actual time
@@ -205,6 +205,39 @@ export default function FocusPage() {
     return () => clearTimeout(t);
   }, [confirmExit]);
 
+  // Keyboard control — Space toggles pause/resume, F finishes, Esc exits.
+  // Skips typing fields and lets a focused button handle its own keys.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable) return;
+
+      if (e.key === "Escape") {
+        if (!musicOpen && !backdropOpen) {
+          e.preventDefault();
+          handleExit();
+        }
+        return;
+      }
+      if (tag === "BUTTON") return;
+
+      if (e.code === "Space") {
+        if (timerState === "running") {
+          e.preventDefault();
+          pauseTimer();
+        } else if (timerState === "paused") {
+          e.preventDefault();
+          startTimer();
+        }
+      } else if (e.key === "f" || e.key === "F") {
+        if (timerState === "running" || timerState === "paused") endSession();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [timerState, musicOpen, backdropOpen, pauseTimer, startTimer, endSession, handleExit]);
+
   // Top-bar popovers (music, backdrop) — close on outside click + Esc
   useEffect(() => {
     if (!musicOpen && !backdropOpen) return;
@@ -236,6 +269,20 @@ export default function FocusPage() {
       <div className="absolute inset-0" aria-hidden>
         <TopologyBg color={activePreset.color} backgroundColor={TOPO_BG} />
       </div>
+
+      {/* Assistive-tech status — announces state changes only, never the
+          per-second countdown (which would flood a screen reader). */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {timerState === "running"
+          ? `Focusing${subjectLabel ? ` on ${subjectLabel}` : ""}`
+          : timerState === "paused"
+          ? "Timer paused"
+          : timerState === "done"
+          ? "Session complete"
+          : timerState === "reflecting"
+          ? "Reflecting on your session"
+          : ""}
+      </p>
 
       {/* ── Top-left: context pill — only once a session is underway ── */}
       {timerState !== "idle" && (
@@ -359,6 +406,7 @@ export default function FocusPage() {
         {/* Exit */}
         <button
           onClick={handleExit}
+          title="Exit (Esc)"
           aria-label={confirmExit ? "Confirm exit — this session won't be saved" : "Exit focus mode"}
           className={cn("focus-btn !px-3 !py-2", confirmExit && "!text-red-600 !border-red-300")}
         >
@@ -573,7 +621,10 @@ function SessionStage({
 
   return (
     <div className="focus-stage-enter flex flex-col items-center">
-      <div className="relative" style={{ width: size, height: size }}>
+      <div
+        className={cn("relative", isDone && "focus-complete-settle")}
+        style={{ width: size, height: size }}
+      >
         {/* Frosted core — a whisper of blur that softens the mesh behind the
             countdown. Edge fades out via a radial mask so there's no hard
             disc; it reads as haze, not a card. */}
@@ -636,13 +687,15 @@ function SessionStage({
 
         {/* Center readout */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <p
-            className="text-6xl font-extralight tracking-tight tabular-nums leading-none text-baltic-800"
-            aria-live="polite"
-          >
+          <p className="text-6xl font-extralight tracking-tight tabular-nums leading-none text-baltic-800">
             {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
           </p>
-          <p className="mt-3 text-[11px] uppercase tracking-[0.22em] text-steel-400 tabular-nums">
+          <p
+            className={cn(
+              "mt-3 text-[11px] uppercase tracking-[0.22em] text-steel-400 tabular-nums",
+              isDone && "focus-complete-label",
+            )}
+          >
             {isDone ? "Complete" : timerState === "paused" ? "Paused" : `of ${String(duration).padStart(2, "0")}:00`}
           </p>
           {isActive && (
@@ -662,7 +715,7 @@ function SessionStage({
       {/* Controls — one primary toggle plus Finish; Discard tucked beneath. */}
       <div className="flex items-center gap-2.5 mt-9">
         {timerState === "running" && (
-          <button onClick={onPause} className="focus-btn focus-btn-primary !px-6">
+          <button onClick={onPause} title="Pause (Space)" className="focus-btn focus-btn-primary !px-6">
             <svg width={12} height={12} viewBox="0 0 12 12" fill="currentColor">
               <rect x="2.5" y="2" width="2.5" height="8" rx="0.5" />
               <rect x="7" y="2" width="2.5" height="8" rx="0.5" />
@@ -671,7 +724,7 @@ function SessionStage({
           </button>
         )}
         {timerState === "paused" && (
-          <button onClick={onResume} className="focus-btn focus-btn-primary !px-6">
+          <button onClick={onResume} title="Resume (Space)" className="focus-btn focus-btn-primary !px-6">
             <svg width={12} height={12} viewBox="0 0 12 12" fill="currentColor">
               <polygon points="3,2 10,6 3,10" />
             </svg>
@@ -679,7 +732,7 @@ function SessionStage({
           </button>
         )}
         {isActive && (
-          <button onClick={onFinish} className="focus-btn">
+          <button onClick={onFinish} title="Finish (F)" className="focus-btn">
             Finish
           </button>
         )}

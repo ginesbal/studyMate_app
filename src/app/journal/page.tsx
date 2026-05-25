@@ -211,7 +211,7 @@ export default function JournalPage() {
                       {/* The bar itself */}
                       <div
                         className={cn(
-                          "w-full rounded-t-md transition-all duration-500 relative",
+                          "w-full rounded-t-md transition-[height,background-color] duration-500 relative",
                           day.isToday
                             ? "bg-baltic-600 dark:bg-baltic-400 ring-2 ring-baltic-200 dark:ring-baltic-700/60"
                             : day.minutes > 0
@@ -375,7 +375,7 @@ export default function JournalPage() {
                     <div
                       key={session.id}
                       className={cn(
-                        "relative rounded-xl bg-white dark:bg-lavender-900 border-2 border-lavender-200 dark:border-lavender-800 p-5 pt-7 shadow-md hover:shadow-lg hover:rotate-0 hover:z-10 transition-all duration-300",
+                        "relative rounded-xl bg-white dark:bg-lavender-900 border-2 border-lavender-200 dark:border-lavender-800 p-5 pt-7 shadow-md hover:shadow-lg hover:rotate-0 hover:z-10 transition-[transform,box-shadow] duration-300",
                         rotation
                       )}
                     >

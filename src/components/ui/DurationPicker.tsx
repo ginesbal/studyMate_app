@@ -3,10 +3,11 @@
 import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 
+export const DURATION_MIN = 5;
+export const DURATION_MAX = 120;
+export const DURATION_STEP = 5;
+
 const PRESETS = [25, 45, 60, 90];
-const MIN = 5;
-const MAX = 120;
-const STEP = 5;
 
 interface DurationPickerProps {
   value: number;
@@ -15,12 +16,12 @@ interface DurationPickerProps {
 }
 
 function clamp(v: number) {
-  return Math.max(MIN, Math.min(MAX, v));
+  return Math.max(DURATION_MIN, Math.min(DURATION_MAX, v));
 }
 
 export default function DurationPicker({ value, onChange, disabled }: DurationPickerProps) {
-  const increment = useCallback(() => onChange(clamp(value + STEP)), [value, onChange]);
-  const decrement = useCallback(() => onChange(clamp(value - STEP)), [value, onChange]);
+  const increment = useCallback(() => onChange(clamp(value + DURATION_STEP)), [value, onChange]);
+  const decrement = useCallback(() => onChange(clamp(value - DURATION_STEP)), [value, onChange]);
 
   const formatDisplay = (mins: number) => {
     if (mins >= 60) {
@@ -37,7 +38,7 @@ export default function DurationPicker({ value, onChange, disabled }: DurationPi
       <div className="flex items-center gap-5">
         <button
           onClick={decrement}
-          disabled={disabled || value <= MIN}
+          disabled={disabled || value <= DURATION_MIN}
           className="w-9 h-9 rounded-full flex items-center justify-center border border-lavender-200 text-baltic-500 hover:bg-lavender-50 hover:border-lavender-300 disabled:opacity-30 disabled:cursor-not-allowed transition-[background-color,border-color,transform] duration-150 ease-out press"
           aria-label="Decrease duration"
         >
@@ -57,7 +58,7 @@ export default function DurationPicker({ value, onChange, disabled }: DurationPi
 
         <button
           onClick={increment}
-          disabled={disabled || value >= MAX}
+          disabled={disabled || value >= DURATION_MAX}
           className="w-9 h-9 rounded-full flex items-center justify-center border border-lavender-200 text-baltic-500 hover:bg-lavender-50 hover:border-lavender-300 disabled:opacity-30 disabled:cursor-not-allowed transition-[background-color,border-color,transform] duration-150 ease-out press"
           aria-label="Increase duration"
         >

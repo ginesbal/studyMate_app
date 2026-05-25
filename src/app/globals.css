@@ -466,10 +466,13 @@
     .focus-canvas-enter,
     .focus-stage-enter,
     .focus-tick-enter,
+    .focus-complete-settle,
+    .focus-complete-label,
     .sweep-active {
       animation: none !important;
     }
     .focus-tick-enter { opacity: 1 !important; }
+    .focus-complete-label { opacity: 1 !important; }
     .paper-card {
       transition: none !important;
       transform: none !important;
@@ -590,6 +593,24 @@
 
   .focus-tick-enter {
     animation: focus-tick-in 80ms var(--ease-out) backwards;
+  }
+
+  /* Completion moment — the timer settles when a session ends. A calm scale
+     "landing" plus the label easing in (blur-bridged). Plays once on done. */
+  @keyframes focus-complete-settle {
+    0%   { transform: scale(0.97); }
+    55%  { transform: scale(1.01); }
+    100% { transform: scale(1); }
+  }
+  .focus-complete-settle {
+    animation: focus-complete-settle 620ms var(--ease-out) both;
+  }
+  @keyframes focus-complete-label {
+    from { opacity: 0; transform: translateY(3px); filter: blur(2px); }
+    to   { opacity: 1; transform: translateY(0);   filter: blur(0); }
+  }
+  .focus-complete-label {
+    animation: focus-complete-label 420ms var(--ease-out) 120ms both;
   }
 
   /* ─── Journal ruled-line background ─── */
