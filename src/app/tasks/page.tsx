@@ -917,7 +917,12 @@ function SubjectTab({
         // shove the + button off-screen. Inactive flex-shrinks aggressively
         // with a truncated label so the row never needs horizontal scroll.
         isActive
-          ? "flex-shrink-0 max-w-[18rem] z-10 pl-4 pr-2 py-2.5 rounded-t-xl bg-white dark:bg-lavender-900 border border-b-0 border-lavender-200/60 dark:border-lavender-800/60 text-baltic-800 dark:text-baltic-100 overflow-hidden"
+          ? cn(
+              "flex-shrink-0 max-w-[18rem] z-10 py-2.5 rounded-t-xl bg-white dark:bg-lavender-900 border border-b-0 border-lavender-200/60 dark:border-lavender-800/60 text-baltic-800 dark:text-baltic-100 overflow-hidden",
+              // The All tab has no close button, so even padding keeps its
+              // label balanced instead of tucked toward the right edge.
+              closable ? "pl-4 pr-2" : "px-4",
+            )
           : "min-w-[5rem] max-w-[10rem] px-3 py-2 rounded-t-lg text-steel-500 dark:text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-baltic-50/60 dark:hover:bg-baltic-900/30"
       )}
       style={{
