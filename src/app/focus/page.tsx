@@ -391,6 +391,7 @@ export default function FocusPage() {
             seconds={seconds}
             duration={duration}
             progress={progress}
+            accentColor={subjectColor}
             onPause={pauseTimer}
             onResume={startTimer}
             onAddFive={addFiveMinutes}
@@ -518,6 +519,7 @@ interface SessionStageProps {
   seconds: number;
   duration: number;
   progress: number;
+  accentColor: string;
   onPause: () => void;
   onResume: () => void;
   onAddFive: () => void;
@@ -527,98 +529,99 @@ interface SessionStageProps {
 }
 
 function SessionStage({
-  timerState, minutes, seconds, duration, progress,
+  timerState, minutes, seconds, duration, progress, accentColor,
   onPause, onResume, onAddFive, onFinish, onDiscard, onSkipReflection,
 }: SessionStageProps) {
   const size = 320;
-  const ringR = 144;
-  const ringStroke = 2;
-  const ringCircumference = 2 * Math.PI * ringR;
-  const ringOffset = ringCircumference * (1 - progress / 100);
+  const cx = size / 2;
+  const ringR = 140;
+  const circ = 2 * Math.PI * ringR;
   const isDone = timerState === "done";
+  const isActive = timerState === "running" || timerState === "paused";
+  const accent = isDone ? "#76946b" : accentColor;
+  const offset = circ * (1 - progress / 100);
+
+  // Position of the glowing frontier dot at the leading edge of the arc.
+  const headAngle = (-90 + (progress / 100) * 360) * (Math.PI / 180);
+  const headX = cx + ringR * Math.cos(headAngle);
+  const headY = cx + ringR * Math.sin(headAngle);
+  const showHead = isActive && progress > 0.5;
 
   return (
     <div className="focus-stage-enter flex flex-col items-center">
       <div className="relative" style={{ width: size, height: size }}>
-        {/* Tick marks */}
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="absolute inset-0">
-          {Array.from({ length: 60 }).map((_, i) => {
-            const angle = (i * 6 - 90) * (Math.PI / 180);
-            const isMajor = i % 5 === 0;
-            const outerR = 156;
-            const innerR = isMajor ? 146 : 151;
-            const cx = size / 2;
-            const x1 = cx + innerR * Math.cos(angle);
-            const y1 = cx + innerR * Math.sin(angle);
-            const x2 = cx + outerR * Math.cos(angle);
-            const y2 = cx + outerR * Math.sin(angle);
+        {/* Frosted core — gives the timer a crafted body over the moving mesh
+            and keeps the countdown legible without a hard card edge. */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" aria-hidden>
+          <div
+            className="rounded-full"
+            style={{
+              width: 244,
+              height: 244,
+              background: "rgba(255,255,255,0.55)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              border: "1px solid rgba(255,255,255,0.65)",
+              boxShadow:
+                "0 1px 2px rgba(38,45,64,0.05), 0 22px 48px -22px rgba(38,45,64,0.30), inset 0 1px 2px rgba(255,255,255,0.7)",
+            }}
+          />
+        </div>
+
+        {/* Minimal hour ticks — faint watch-face character, 12 only. */}
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="absolute inset-0" aria-hidden>
+          {Array.from({ length: 12 }).map((_, i) => {
+            const a = (i * 30 - 90) * (Math.PI / 180);
+            const r1 = 118;
+            const r2 = i % 3 === 0 ? 109 : 113;
             return (
               <line
                 key={i}
-                x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={isMajor ? "#9faac6" : "#c5c9d3"}
-                strokeWidth={isMajor ? 1.25 : 0.6}
+                x1={cx + r1 * Math.cos(a)} y1={cx + r1 * Math.sin(a)}
+                x2={cx + r2 * Math.cos(a)} y2={cx + r2 * Math.sin(a)}
+                stroke="#b8bdcc"
+                strokeWidth={i % 3 === 0 ? 1.5 : 1}
                 strokeLinecap="round"
                 className="focus-tick-enter"
-                style={{ animationDelay: `${i * 8}ms` }}
+                style={{ animationDelay: `${i * 22}ms`, opacity: 0.55 }}
               />
             );
           })}
+        </svg>
 
-          {/* Track */}
+        {/* Progress ring — bold rounded arc in the subject's colour. */}
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="absolute inset-0 -rotate-90">
+          <defs>
+            <linearGradient id="focusArc" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={accent} stopOpacity={0.45} />
+              <stop offset="100%" stopColor={accent} stopOpacity={1} />
+            </linearGradient>
+          </defs>
+          <circle cx={cx} cy={cx} r={ringR} fill="none" stroke="#e4e6ec" strokeWidth={3} />
           <circle
-            cx={size / 2} cy={size / 2} r={ringR}
+            cx={cx} cy={cx} r={ringR}
             fill="none"
-            stroke="#e2e4e9"
-            strokeWidth={ringStroke}
-          />
-
-          {/* Progress arc */}
-          <circle
-            cx={size / 2} cy={size / 2} r={ringR}
-            fill="none"
-            stroke={isDone ? "#76946b" : "#60729f"}
-            strokeWidth={ringStroke}
+            stroke="url(#focusArc)"
+            strokeWidth={7}
             strokeLinecap="round"
-            strokeDasharray={ringCircumference}
-            strokeDashoffset={ringOffset}
-            className="-rotate-90 origin-center"
-            style={{ transition: "stroke-dashoffset 900ms linear, stroke 300ms ease" }}
+            strokeDasharray={circ}
+            strokeDashoffset={offset}
+            style={{ transition: "stroke-dashoffset 900ms linear" }}
           />
         </svg>
 
-        {/* Sweep hand — only while actively timing */}
-        <div
-          className={cn(
-            "absolute inset-0 pointer-events-none",
-            (timerState === "running" || timerState === "paused") && "sweep-active",
-          )}
-          style={{
-            opacity: timerState === "running" || timerState === "paused" ? 1 : 0,
-            animationPlayState: timerState === "paused" ? "paused" : "running",
-            transition: "opacity 0.3s ease",
-          }}
-          aria-hidden
-        >
-          <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-            <line
-              x1={size / 2} y1={size / 2} x2={size / 2} y2={20}
-              stroke="#808eb3"
-              strokeWidth={1}
-              strokeLinecap="round"
-              opacity={0.5}
+        {/* Glowing frontier dot — the live edge of progress. */}
+        {showHead && (
+          <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="absolute inset-0 pointer-events-none" aria-hidden>
+            <circle
+              cx={headX} cy={headY} r={5.5}
+              fill={accent}
+              style={{ filter: `drop-shadow(0 0 7px ${accent})` }}
+              className={timerState === "running" ? "timer-pulse" : ""}
             />
-            <circle cx={size / 2} cy={size / 2} r={2} fill="#808eb3" />
+            <circle cx={headX} cy={headY} r={2} fill="#ffffff" opacity={0.9} />
           </svg>
-        </div>
-
-        {/* Soft scrim so the countdown stays legible over the moving mesh */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" aria-hidden>
-          <div
-            className="w-60 h-60 rounded-full"
-            style={{ background: "radial-gradient(closest-side, rgba(239,241,245,0.92), rgba(239,241,245,0))" }}
-          />
-        </div>
+        )}
 
         {/* Center readout */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -632,62 +635,64 @@ function SessionStage({
             {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
           </p>
           <p className="mt-3 text-[11px] uppercase tracking-[0.22em] text-steel-400 tabular-nums">
-            {isDone
-              ? "Complete"
-              : `/ ${String(duration).padStart(2, "0")}:00 · ${timerState === "paused" ? "Paused" : "Focusing"}`
-            }
+            {isDone ? "Complete" : timerState === "paused" ? "Paused" : `of ${String(duration).padStart(2, "0")}:00`}
           </p>
+          {isActive && (
+            <button
+              onClick={onAddFive}
+              className="mt-3.5 inline-flex items-center gap-1 rounded-full border border-lavender-200 bg-white/60 px-2.5 py-1 text-[11px] font-medium text-steel-500 hover:border-baltic-300 hover:text-baltic-600 transition-colors duration-150 press"
+            >
+              <svg width={10} height={10} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round">
+                <path d="M6 2v8M2 6h8" />
+              </svg>
+              <span className="tabular-nums">5 min</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="flex items-center gap-2 mt-8">
+      {/* Controls — one primary toggle plus Finish; Discard tucked beneath. */}
+      <div className="flex items-center gap-2.5 mt-9">
         {timerState === "running" && (
-          <>
-            <button onClick={onPause} className="focus-btn">
-              <svg width={12} height={12} viewBox="0 0 12 12" fill="currentColor">
-                <rect x="2.5" y="2" width="2.5" height="8" rx="0.5" />
-                <rect x="7" y="2" width="2.5" height="8" rx="0.5" />
-              </svg>
-              Pause
-            </button>
-            <button onClick={onAddFive} className="focus-btn">
-              <span className="tabular-nums">+5 min</span>
-            </button>
-            <button onClick={onFinish} className="focus-btn">
-              Finish
-            </button>
-            <DiscardButton onConfirm={onDiscard} />
-          </>
+          <button onClick={onPause} className="focus-btn focus-btn-primary !px-6">
+            <svg width={12} height={12} viewBox="0 0 12 12" fill="currentColor">
+              <rect x="2.5" y="2" width="2.5" height="8" rx="0.5" />
+              <rect x="7" y="2" width="2.5" height="8" rx="0.5" />
+            </svg>
+            Pause
+          </button>
         )}
         {timerState === "paused" && (
-          <>
-            <button onClick={onResume} className="focus-btn focus-btn-primary">
-              <svg width={12} height={12} viewBox="0 0 12 12" fill="currentColor">
-                <polygon points="3,2 10,6 3,10" />
-              </svg>
-              Resume
-            </button>
-            <button onClick={onAddFive} className="focus-btn">
-              <span className="tabular-nums">+5 min</span>
-            </button>
-            <button onClick={onFinish} className="focus-btn">
-              Finish
-            </button>
-            <DiscardButton onConfirm={onDiscard} />
-          </>
+          <button onClick={onResume} className="focus-btn focus-btn-primary !px-6">
+            <svg width={12} height={12} viewBox="0 0 12 12" fill="currentColor">
+              <polygon points="3,2 10,6 3,10" />
+            </svg>
+            Resume
+          </button>
         )}
-        {timerState === "done" && (
+        {isActive && (
+          <button onClick={onFinish} className="focus-btn">
+            Finish
+          </button>
+        )}
+        {isDone && (
           <>
-            <button onClick={onFinish} className="focus-btn focus-btn-primary">
+            <button onClick={onFinish} className="focus-btn focus-btn-primary !px-6">
               Reflect on session
             </button>
             <button onClick={onSkipReflection} className="focus-btn">
-              Skip reflection
+              Skip
             </button>
           </>
         )}
       </div>
+
+      {/* Discard — quiet and separated; abandons the session without logging. */}
+      {isActive && (
+        <div className="mt-3">
+          <DiscardButton onConfirm={onDiscard} />
+        </div>
+      )}
     </div>
   );
 }
