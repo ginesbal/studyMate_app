@@ -538,32 +538,26 @@ function SessionStage({
   const circ = 2 * Math.PI * ringR;
   const isDone = timerState === "done";
   const isActive = timerState === "running" || timerState === "paused";
-  const accent = isDone ? "#76946b" : accentColor;
+  const accent = accentColor;
   const offset = circ * (1 - progress / 100);
-
-  // Position of the glowing frontier dot at the leading edge of the arc.
-  const headAngle = (-90 + (progress / 100) * 360) * (Math.PI / 180);
-  const headX = cx + ringR * Math.cos(headAngle);
-  const headY = cx + ringR * Math.sin(headAngle);
-  const showHead = isActive && progress > 0.5;
 
   return (
     <div className="focus-stage-enter flex flex-col items-center">
       <div className="relative" style={{ width: size, height: size }}>
-        {/* Frosted core — gives the timer a crafted body over the moving mesh
-            and keeps the countdown legible without a hard card edge. */}
+        {/* Frosted core — a whisper of blur that softens the mesh behind the
+            countdown. Edge fades out via a radial mask so there's no hard
+            disc; it reads as haze, not a card. */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none" aria-hidden>
           <div
             className="rounded-full"
             style={{
-              width: 244,
-              height: 244,
-              background: "rgba(255,255,255,0.55)",
-              backdropFilter: "blur(12px)",
-              WebkitBackdropFilter: "blur(12px)",
-              border: "1px solid rgba(255,255,255,0.65)",
-              boxShadow:
-                "0 1px 2px rgba(38,45,64,0.05), 0 22px 48px -22px rgba(38,45,64,0.30), inset 0 1px 2px rgba(255,255,255,0.7)",
+              width: 248,
+              height: 248,
+              background: "rgba(255,255,255,0.22)",
+              backdropFilter: "blur(7px)",
+              WebkitBackdropFilter: "blur(7px)",
+              maskImage: "radial-gradient(closest-side, #000 70%, transparent 100%)",
+              WebkitMaskImage: "radial-gradient(closest-side, #000 70%, transparent 100%)",
             }}
           />
         </div>
@@ -610,26 +604,10 @@ function SessionStage({
           />
         </svg>
 
-        {/* Glowing frontier dot — the live edge of progress. */}
-        {showHead && (
-          <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="absolute inset-0 pointer-events-none" aria-hidden>
-            <circle
-              cx={headX} cy={headY} r={5.5}
-              fill={accent}
-              style={{ filter: `drop-shadow(0 0 7px ${accent})` }}
-              className={timerState === "running" ? "timer-pulse" : ""}
-            />
-            <circle cx={headX} cy={headY} r={2} fill="#ffffff" opacity={0.9} />
-          </svg>
-        )}
-
         {/* Center readout */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <p
-            className={cn(
-              "text-7xl font-extralight tracking-tighter tabular-nums leading-none",
-              isDone ? "text-ash-600" : "text-baltic-800",
-            )}
+            className="text-6xl font-extralight tracking-tight tabular-nums leading-none text-baltic-800"
             aria-live="polite"
           >
             {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
