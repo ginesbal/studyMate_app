@@ -58,6 +58,7 @@ export default function FocusPage() {
   const musicMenuRef = useRef<HTMLDivElement>(null);
   const [backdropOpen, setBackdropOpen] = useState(false);
   const backdropMenuRef = useRef<HTMLDivElement>(null);
+  const [confirmExit, setConfirmExit] = useState(false);
 
   const [topoPreset, setTopoPreset] = useState<TopoPresetKey>(() => {
     if (typeof window === "undefined") return "baltic";
@@ -132,16 +133,29 @@ export default function FocusPage() {
     router.push("/dashboard");
   }, [clearTimer, router]);
 
+  // Guard against losing an in-progress or unsaved session: the first click
+  // during a live session arms a confirm, the second actually leaves.
+  const handleExit = useCallback(() => {
+    if (timerState === "idle" || confirmExit) {
+      exitToDashboard();
+      return;
+    }
+    setConfirmExit(true);
+  }, [timerState, confirmExit, exitToDashboard]);
+
   const addFiveMinutes = useCallback(() => {
     setDuration((d) => Math.min(d + 5, 240));
     setSecondsLeft((s) => s + 5 * 60);
   }, []);
 
-  const beginReflection = useCallback(() => {
+  // End the session now and move to reflection, recording the actual time
+  // focused — partial when finishing early, full when the timer completed.
+  const endSession = useCallback(() => {
+    clearTimer();
     const elapsed = Math.max(Math.round((totalSeconds - secondsLeft) / 60), 1);
     setElapsedMinutes(elapsed);
     setTimerState("reflecting");
-  }, [totalSeconds, secondsLeft]);
+  }, [clearTimer, totalSeconds, secondsLeft]);
 
   const saveWithReflection = useCallback(() => {
     if (!subject) return;
@@ -150,28 +164,29 @@ export default function FocusPage() {
       elapsedMinutes,
       reflectionQuality
         ? { quality: reflectionQuality, ...(reflectionNote.trim() ? { note: reflectionNote.trim() } : {}) }
-        : undefined
+        : undefined,
+      task
     );
     setTask("");
     resetToIdle();
-  }, [subject, elapsedMinutes, reflectionQuality, reflectionNote, addSession, resetToIdle]);
+  }, [subject, elapsedMinutes, reflectionQuality, reflectionNote, task, addSession, resetToIdle]);
 
   const skipReflection = useCallback(() => {
     if (!subject) return;
-    addSession(subject, elapsedMinutes);
+    addSession(subject, elapsedMinutes, undefined, task);
     setTask("");
     resetToIdle();
-  }, [subject, elapsedMinutes, addSession, resetToIdle]);
+  }, [subject, elapsedMinutes, task, addSession, resetToIdle]);
 
   // Log a completed session straight from the done screen, skipping the
   // reflection step. The work happened — record it regardless.
   const finishWithoutReflection = useCallback(() => {
     if (!subject) return;
     const elapsed = Math.max(Math.round((totalSeconds - secondsLeft) / 60), 1);
-    addSession(subject, elapsed);
+    addSession(subject, elapsed, undefined, task);
     setTask("");
     resetToIdle();
-  }, [subject, totalSeconds, secondsLeft, addSession, resetToIdle]);
+  }, [subject, totalSeconds, secondsLeft, task, addSession, resetToIdle]);
 
   // Keep secondsLeft in sync when duration changes during setup
   useEffect(() => {
@@ -182,6 +197,13 @@ export default function FocusPage() {
 
   // Clean up interval on unmount
   useEffect(() => () => clearTimer(), [clearTimer]);
+
+  // Disarm the exit confirm if the user doesn't follow through
+  useEffect(() => {
+    if (!confirmExit) return;
+    const t = setTimeout(() => setConfirmExit(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmExit]);
 
   // Top-bar popovers (music, backdrop) — close on outside click + Esc
   useEffect(() => {
@@ -336,14 +358,14 @@ export default function FocusPage() {
 
         {/* Exit */}
         <button
-          onClick={exitToDashboard}
-          aria-label="Exit focus mode"
-          className="focus-btn !px-3 !py-2"
+          onClick={handleExit}
+          aria-label={confirmExit ? "Confirm exit — this session won't be saved" : "Exit focus mode"}
+          className={cn("focus-btn !px-3 !py-2", confirmExit && "!text-red-600 !border-red-300")}
         >
           <svg width={12} height={12} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
             <path d="M3 3l6 6M9 3l-6 6" />
           </svg>
-          <span className="text-sm">Exit</span>
+          <span className="text-sm whitespace-nowrap">{confirmExit ? "Discard & leave?" : "Exit"}</span>
         </button>
       </div>
 
@@ -371,9 +393,9 @@ export default function FocusPage() {
             progress={progress}
             onPause={pauseTimer}
             onResume={startTimer}
-            onReset={resetToIdle}
             onAddFive={addFiveMinutes}
-            onReflect={beginReflection}
+            onFinish={endSession}
+            onDiscard={resetToIdle}
             onSkipReflection={finishWithoutReflection}
           />
         )}
@@ -498,15 +520,15 @@ interface SessionStageProps {
   progress: number;
   onPause: () => void;
   onResume: () => void;
-  onReset: () => void;
   onAddFive: () => void;
-  onReflect: () => void;
+  onFinish: () => void;
+  onDiscard: () => void;
   onSkipReflection: () => void;
 }
 
 function SessionStage({
   timerState, minutes, seconds, duration, progress,
-  onPause, onResume, onReset, onAddFive, onReflect, onSkipReflection,
+  onPause, onResume, onAddFive, onFinish, onDiscard, onSkipReflection,
 }: SessionStageProps) {
   const size = 320;
   const ringR = 144;
@@ -629,16 +651,13 @@ function SessionStage({
               </svg>
               Pause
             </button>
-            <button onClick={onReset} className="focus-btn">
-              <svg width={12} height={12} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 6a4 4 0 1 0 1.5-3.1" />
-                <path d="M2 1.5v3h3" />
-              </svg>
-              Reset
-            </button>
             <button onClick={onAddFive} className="focus-btn">
               <span className="tabular-nums">+5 min</span>
             </button>
+            <button onClick={onFinish} className="focus-btn">
+              Finish
+            </button>
+            <DiscardButton onConfirm={onDiscard} />
           </>
         )}
         {timerState === "paused" && (
@@ -649,17 +668,18 @@ function SessionStage({
               </svg>
               Resume
             </button>
-            <button onClick={onReset} className="focus-btn">
-              Reset
-            </button>
             <button onClick={onAddFive} className="focus-btn">
               <span className="tabular-nums">+5 min</span>
             </button>
+            <button onClick={onFinish} className="focus-btn">
+              Finish
+            </button>
+            <DiscardButton onConfirm={onDiscard} />
           </>
         )}
         {timerState === "done" && (
           <>
-            <button onClick={onReflect} className="focus-btn focus-btn-primary">
+            <button onClick={onFinish} className="focus-btn focus-btn-primary">
               Reflect on session
             </button>
             <button onClick={onSkipReflection} className="focus-btn">
@@ -669,6 +689,28 @@ function SessionStage({
         )}
       </div>
     </div>
+  );
+}
+
+// Discard control — a two-step confirm so a misclick can't throw away an
+// in-progress session. Disarms itself after a few seconds.
+function DiscardButton({ onConfirm }: { onConfirm: () => void }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return (
+    <button
+      onClick={() => { if (armed) onConfirm(); else setArmed(true); }}
+      className={cn(
+        "px-3 py-2 rounded-full text-sm transition-colors duration-150 press",
+        armed ? "text-red-600 font-medium" : "text-steel-400 hover:text-red-600"
+      )}
+    >
+      {armed ? "Confirm discard" : "Discard"}
+    </button>
   );
 }
 

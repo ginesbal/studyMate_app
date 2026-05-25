@@ -418,6 +418,13 @@ export default function JournalPage() {
                         </span>
                       </div>
 
+                      {/* What they worked on */}
+                      {session.task && (
+                        <p className="text-sm font-medium text-baltic-700 dark:text-baltic-200 mb-2 truncate">
+                          {session.task}
+                        </p>
+                      )}
+
                       {/* Quality */}
                       {session.reflection && (
                         <div className="flex items-center gap-2 mb-2">

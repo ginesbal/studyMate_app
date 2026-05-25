@@ -223,7 +223,7 @@ export function useTasks() {
 // ─── Focus Sessions Context ───
 interface FocusState {
   sessions: FocusSession[];
-  addSession: (subject: string, duration: number, reflection?: Reflection) => void;
+  addSession: (subject: string, duration: number, reflection?: Reflection, task?: string) => void;
   todayMinutes: number;
   weekMinutes: number;
   streak: number;
@@ -276,7 +276,7 @@ export function FocusProvider({ children }: { children: ReactNode }) {
     if (mounted) save("aim_sessions", sessions);
   }, [sessions, mounted]);
 
-  const addSession = useCallback((subject: string, duration: number, reflection?: Reflection) => {
+  const addSession = useCallback((subject: string, duration: number, reflection?: Reflection, task?: string) => {
     setSessions((prev) => [
       ...prev,
       {
@@ -285,6 +285,7 @@ export function FocusProvider({ children }: { children: ReactNode }) {
         duration,
         completedAt: new Date().toISOString(),
         ...(reflection ? { reflection } : {}),
+        ...(task && task.trim() ? { task: task.trim() } : {}),
       },
     ]);
   }, []);
