@@ -380,6 +380,7 @@ export default function FocusPage() {
             task={task}
             onTaskChange={setTask}
             canBegin={canBegin}
+            accentColor={subjectColor}
             onBegin={startTimer}
           />
         )}
@@ -439,6 +440,7 @@ interface SetupStageProps {
   task: string;
   onTaskChange: (s: string) => void;
   canBegin: boolean;
+  accentColor: string;
   onBegin: () => void;
 }
 
@@ -446,64 +448,92 @@ function SetupStage({
   duration, onDurationChange,
   subject, onSubjectChange,
   task, onTaskChange,
-  canBegin, onBegin,
+  canBegin, accentColor, onBegin,
 }: SetupStageProps) {
   const [showTask, setShowTask] = useState(false);
   const showTaskInput = showTask || task.length > 0;
 
   return (
     <div className="focus-stage-enter w-full max-w-sm">
-      {/* Calm solid card so the moving mesh stops competing with the inputs */}
-      <div className="rounded-3xl bg-white border border-lavender-200 shadow-[0_18px_44px_-14px_rgba(38,45,64,0.22)] p-7">
-        {/* How long */}
-        <DurationPicker value={duration} onChange={onDurationChange} />
+      {/* Intention card — reads as a handwritten line ("focus for 25 minutes
+          on …") and quietly takes on the colour of the subject you choose. */}
+      <div className="relative rounded-[28px] bg-white border border-lavender-200 shadow-[0_2px_4px_-1px_rgba(38,45,64,0.04),0_14px_30px_-10px_rgba(38,45,64,0.16),0_40px_64px_-32px_rgba(38,45,64,0.12)]">
+        {/* Subject wash — barely-there tint at the head of the card. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-28 rounded-t-[28px] transition-[background-color,opacity] duration-500 ease-out"
+          style={{
+            backgroundColor: accentColor,
+            opacity: subject ? 0.08 : 0.035,
+            maskImage: "linear-gradient(180deg, #000, transparent)",
+            WebkitMaskImage: "linear-gradient(180deg, #000, transparent)",
+          }}
+        />
 
-        <div className="h-px bg-lavender-100 my-6" />
+        <div className="relative px-8 pt-8 pb-8">
+          {/* Duration */}
+          <p className="text-center font-script text-[17px] leading-none text-baltic-400 mb-3 select-none">
+            focus for
+          </p>
+          <DurationPicker value={duration} onChange={onDurationChange} />
 
-        {/* What */}
-        <SubjectSelector value={subject} onChange={onSubjectChange} />
+          {/* Torn-paper rule — a quiet nod to the journal. */}
+          <div className="border-t border-dashed border-lavender-200 my-6" />
 
-        {/* Optional note — disclosed on demand to keep the default view calm */}
-        <div className="mt-3">
-          {showTaskInput ? (
-            <input
-              type="text"
-              autoFocus={showTask && task.length === 0}
-              value={task}
-              onChange={(e) => onTaskChange(e.target.value)}
-              placeholder="What are you working on?"
-              maxLength={60}
-              className="w-full px-4 py-2 text-sm rounded-full bg-white border border-lavender-200 text-baltic-800 placeholder:text-steel-400 outline-none focus:border-baltic-400 focus:ring-2 focus:ring-baltic-400/20 transition-colors duration-150"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowTask(true)}
-              className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs text-steel-400 hover:text-baltic-600 transition-colors duration-150"
-            >
-              <svg width={12} height={12} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
-                <path d="M6 2v8M2 6h8" />
-              </svg>
-              Add what you&apos;re working on
-            </button>
+          {/* Subject */}
+          <p className="text-center font-script text-[17px] leading-none text-baltic-400 mb-3 select-none">
+            on
+          </p>
+          <SubjectSelector value={subject} onChange={onSubjectChange} />
+
+          {/* Optional note — disclosed on demand to keep the default view calm */}
+          <div className="mt-3">
+            {showTaskInput ? (
+              <input
+                type="text"
+                autoFocus={showTask && task.length === 0}
+                value={task}
+                onChange={(e) => onTaskChange(e.target.value)}
+                placeholder="What are you working on?"
+                maxLength={60}
+                className="w-full px-4 py-2 text-sm rounded-full bg-white border border-lavender-200 text-baltic-800 placeholder:text-steel-400 outline-none focus:border-baltic-400 focus:ring-2 focus:ring-baltic-400/20 transition-colors duration-150"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowTask(true)}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs text-steel-400 hover:text-baltic-600 transition-colors duration-150"
+              >
+                <svg width={12} height={12} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+                  <path d="M6 2v8M2 6h8" />
+                </svg>
+                Add what you&apos;re working on
+              </button>
+            )}
+          </div>
+
+          {/* Begin — fills with the subject's colour once a subject is set. */}
+          <button
+            onClick={onBegin}
+            disabled={!canBegin}
+            style={canBegin ? { backgroundColor: accentColor } : undefined}
+            className={cn(
+              "mt-7 w-full inline-flex items-center justify-center gap-2 rounded-full py-3.5 text-[15px] font-medium transition-[filter,transform,background-color,box-shadow] duration-150 ease-out active:scale-[0.98]",
+              canBegin
+                ? "text-white hover:brightness-[0.94] shadow-[0_10px_24px_-10px_rgba(38,45,64,0.45)]"
+                : "bg-baltic-100 text-baltic-300 cursor-not-allowed",
+            )}
+          >
+            <svg width={14} height={14} viewBox="0 0 14 14" fill="none">
+              <polygon points="3,2 12,7 3,12" fill="currentColor" />
+            </svg>
+            Begin focusing
+          </button>
+
+          {!canBegin && (
+            <p className="mt-3 text-center text-xs text-steel-400 select-none">Pick a subject to begin</p>
           )}
         </div>
-
-        {/* Begin */}
-        <button
-          onClick={onBegin}
-          disabled={!canBegin}
-          className="mt-6 w-full focus-btn focus-btn-primary !py-3 text-[15px]"
-        >
-          <svg width={14} height={14} viewBox="0 0 14 14" fill="none">
-            <polygon points="3,2 12,7 3,12" fill="currentColor" />
-          </svg>
-          Begin focusing
-        </button>
-
-        {!canBegin && (
-          <p className="mt-2.5 text-center text-xs text-steel-400">Pick a subject to begin</p>
-        )}
       </div>
     </div>
   );
