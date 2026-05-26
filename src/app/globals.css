@@ -482,6 +482,10 @@
     .press:active {
       transform: none !important;
     }
+    /* Journal entry cards keep their static tilt but drop animated movement */
+    .journal-card {
+      transition: none !important;
+    }
   }
 
   /* ────────────────────────────────────────────────────────
