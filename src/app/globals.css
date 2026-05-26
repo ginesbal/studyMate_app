@@ -468,11 +468,13 @@
     .focus-tick-enter,
     .focus-complete-settle,
     .focus-complete-label,
+    .focus-label-swap,
     .sweep-active {
       animation: none !important;
     }
     .focus-tick-enter { opacity: 1 !important; }
     .focus-complete-label { opacity: 1 !important; }
+    .focus-label-swap { opacity: 1 !important; }
     .paper-card {
       transition: none !important;
       transform: none !important;
@@ -611,6 +613,16 @@
   }
   .focus-complete-label {
     animation: focus-complete-label 420ms var(--ease-out) 120ms both;
+  }
+
+  /* Context-pill label swap — blur-fades the new state label in so the
+     "Focusing → Paused → Complete" change bridges rather than snaps. */
+  @keyframes focus-label-swap {
+    from { opacity: 0; filter: blur(3px); }
+    to   { opacity: 1; filter: blur(0); }
+  }
+  .focus-label-swap {
+    animation: focus-label-swap 260ms var(--ease-out) both;
   }
 
   /* ─── Journal ruled-line background ─── */

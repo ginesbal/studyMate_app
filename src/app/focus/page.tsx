@@ -38,6 +38,16 @@ const MUSIC_OPTIONS = [
   { id: "lofi",   label: "Lofi loop",    desc: "Tape, no vocals" },
 ] as const;
 
+// Perceived luminance — picks readable text over an arbitrary subject colour.
+function isLightColor(hex: string): boolean {
+  const h = hex.replace("#", "");
+  if (h.length < 6) return false;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150;
+}
+
 export default function FocusPage() {
   const router = useRouter();
   const { addSession } = useFocus();
@@ -49,6 +59,12 @@ export default function FocusPage() {
   const [timerState, setTimerState] = useState<TimerState>("idle");
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Timestamp the timer's target end so it stays accurate when the tab is
+  // backgrounded or the machine sleeps — setInterval alone drifts/throttles.
+  // Mirrors of secondsLeft/duration keep the ticking callbacks stable.
+  const endTimeRef = useRef<number>(0);
+  const secondsLeftRef = useRef<number>(25 * 60);
+  const durationRef = useRef<number>(25);
 
   const [reflectionQuality, setReflectionQuality] = useState<FocusQuality | null>(null);
   const [reflectionNote, setReflectionNote] = useState("");
@@ -100,23 +116,33 @@ export default function FocusPage() {
     }
   }, []);
 
-  const startTimer = useCallback(() => {
-    clearTimer();
-    setTimerState("running");
-    intervalRef.current = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          clearTimer();
-          setTimerState("done");
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+  // Recompute remaining from the target timestamp; finish exactly at/after it.
+  const tick = useCallback(() => {
+    const now = Date.now();
+    if (now >= endTimeRef.current) {
+      clearTimer();
+      secondsLeftRef.current = 0;
+      setSecondsLeft(0);
+      setTimerState("done");
+      return;
+    }
+    setSecondsLeft(Math.ceil((endTimeRef.current - now) / 1000));
   }, [clearTimer]);
 
-  const pauseTimer = useCallback(() => {
+  const startTimer = useCallback(() => {
     clearTimer();
+    endTimeRef.current = Date.now() + secondsLeftRef.current * 1000;
+    setTimerState("running");
+    // 250ms cadence self-corrects drift; setSecondsLeft no-ops when the whole
+    // second is unchanged, so this still renders only ~once per second.
+    intervalRef.current = setInterval(tick, 250);
+  }, [clearTimer, tick]);
+
+  const pauseTimer = useCallback(() => {
+    const remaining = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000));
+    clearTimer();
+    secondsLeftRef.current = remaining;
+    setSecondsLeft(remaining);
     setTimerState("paused");
   }, [clearTimer]);
 
@@ -146,16 +172,21 @@ export default function FocusPage() {
   const addFiveMinutes = useCallback(() => {
     setDuration((d) => Math.min(d + 5, DURATION_MAX));
     setSecondsLeft((s) => Math.min(s + 5 * 60, DURATION_MAX * 60));
+    // Push the live target out too, capped so remaining never exceeds the max.
+    if (intervalRef.current) {
+      const maxEnd = Date.now() + DURATION_MAX * 60 * 1000;
+      endTimeRef.current = Math.min(endTimeRef.current + 5 * 60 * 1000, maxEnd);
+    }
   }, []);
 
   // End the session now and move to reflection, recording the actual time
   // focused — partial when finishing early, full when the timer completed.
   const endSession = useCallback(() => {
     clearTimer();
-    const elapsed = Math.max(Math.round((totalSeconds - secondsLeft) / 60), 1);
+    const elapsed = Math.max(Math.round((durationRef.current * 60 - secondsLeftRef.current) / 60), 1);
     setElapsedMinutes(elapsed);
     setTimerState("reflecting");
-  }, [clearTimer, totalSeconds, secondsLeft]);
+  }, [clearTimer]);
 
   const saveWithReflection = useCallback(() => {
     if (!subject) return;
@@ -182,11 +213,11 @@ export default function FocusPage() {
   // reflection step. The work happened — record it regardless.
   const finishWithoutReflection = useCallback(() => {
     if (!subject) return;
-    const elapsed = Math.max(Math.round((totalSeconds - secondsLeft) / 60), 1);
+    const elapsed = Math.max(Math.round((durationRef.current * 60 - secondsLeftRef.current) / 60), 1);
     addSession(subject, elapsed, undefined, task);
     setTask("");
     resetToIdle();
-  }, [subject, totalSeconds, secondsLeft, task, addSession, resetToIdle]);
+  }, [subject, task, addSession, resetToIdle]);
 
   // Keep secondsLeft in sync when duration changes during setup
   useEffect(() => {
@@ -195,8 +226,22 @@ export default function FocusPage() {
     }
   }, [duration, timerState]);
 
+  // Mirror latest values into refs so the ticking callbacks stay stable.
+  useEffect(() => { secondsLeftRef.current = secondsLeft; }, [secondsLeft]);
+  useEffect(() => { durationRef.current = duration; }, [duration]);
+
   // Clean up interval on unmount
   useEffect(() => () => clearTimer(), [clearTimer]);
+
+  // Returning to a backgrounded tab: snap to the true remaining time (and
+  // finish if it elapsed while hidden), since timers throttle when hidden.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible" && intervalRef.current) tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [tick]);
 
   // Disarm the exit confirm if the user doesn't follow through
   useEffect(() => {
@@ -289,10 +334,14 @@ export default function FocusPage() {
         <header className="absolute top-6 left-6 z-10 focus-stage-enter">
           <div className="focus-panel rounded-full px-4 py-2 flex items-center gap-3">
             <span className="text-[10px] uppercase tracking-[0.22em] text-steel-400">
-              {timerState === "running" && "Focusing on"}
-              {timerState === "paused" && "Paused"}
-              {timerState === "done" && "Session complete"}
-              {timerState === "reflecting" && "Reflecting"}
+              {/* Keyed so the label re-mounts and blur-fades in on each state
+                  change, bridging the swap instead of snapping. */}
+              <span key={timerState} className="focus-label-swap inline-block">
+                {timerState === "running" && "Focusing on"}
+                {timerState === "paused" && "Paused"}
+                {timerState === "done" && "Session complete"}
+                {timerState === "reflecting" && "Reflecting"}
+              </span>
             </span>
             <div className="flex items-center gap-2 min-w-0">
               <div
@@ -564,11 +613,15 @@ function SetupStage({
           <button
             onClick={onBegin}
             disabled={!canBegin}
-            style={canBegin ? { backgroundColor: accentColor } : undefined}
-            className={cn(
-              "mt-7 w-full inline-flex items-center justify-center gap-2 rounded-full py-3.5 text-[15px] font-medium transition-[filter,transform,background-color,box-shadow] duration-150 ease-out active:scale-[0.98]",
+            style={
               canBegin
-                ? "text-white hover:brightness-[0.94] shadow-[0_10px_24px_-10px_rgba(38,45,64,0.45)]"
+                ? { backgroundColor: accentColor, color: isLightColor(accentColor) ? "#262d40" : "#ffffff" }
+                : undefined
+            }
+            className={cn(
+              "mt-7 w-full inline-flex items-center justify-center gap-2 rounded-full py-3.5 text-[15px] font-medium transition-[filter,transform,background-color,color,box-shadow] duration-150 ease-out active:scale-[0.98]",
+              canBegin
+                ? "hover:brightness-[0.94] shadow-[0_10px_24px_-10px_rgba(38,45,64,0.45)]"
                 : "bg-baltic-100 text-baltic-300 cursor-not-allowed",
             )}
           >
