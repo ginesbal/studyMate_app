@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 interface ModalProps {
@@ -11,6 +11,9 @@ interface ModalProps {
   width?: "sm" | "md" | "lg";
 }
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export default function Modal({
   open,
   onClose,
@@ -19,7 +22,10 @@ export default function Modal({
   width = "md",
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
 
+  // Lock body scroll while open.
   useEffect(() => {
     if (open) {
       document.body.style.overflow = "hidden";
@@ -31,6 +37,7 @@ export default function Modal({
     };
   }, [open]);
 
+  // Esc to close.
   useEffect(() => {
     function handleEsc(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -39,7 +46,52 @@ export default function Modal({
     return () => window.removeEventListener("keydown", handleEsc);
   }, [open, onClose]);
 
+  // Move focus into the dialog on open and restore it to the trigger on
+  // close. An autofocused field inside wins — we only reach for the first
+  // focusable when nothing in the panel has already taken focus.
+  useEffect(() => {
+    if (!open) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const raf = requestAnimationFrame(() => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      if (!panel.contains(document.activeElement)) {
+        const first = panel.querySelector<HTMLElement>(FOCUSABLE);
+        (first ?? panel).focus();
+      }
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      if (previouslyFocused && document.contains(previouslyFocused)) {
+        previouslyFocused.focus();
+      }
+    };
+  }, [open]);
+
   if (!open) return null;
+
+  // Keep Tab focus within the panel (focus trap).
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== "Tab") return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const focusables = Array.from(
+      panel.querySelectorAll<HTMLElement>(FOCUSABLE)
+    ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+    if (focusables.length === 0) {
+      e.preventDefault();
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
 
   return (
     <div
@@ -54,8 +106,15 @@ export default function Modal({
 
       {/* Panel */}
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        aria-label={title ? undefined : "Dialog"}
+        tabIndex={-1}
+        onKeyDown={handleKeyDown}
         className={cn(
-          "modal-panel-enter relative bg-white dark:bg-lavender-900 rounded-2xl shadow-lg p-6",
+          "modal-panel-enter relative bg-white dark:bg-lavender-900 rounded-2xl shadow-lg p-6 outline-none",
           width === "sm" && "w-full max-w-sm",
           width === "md" && "w-full max-w-lg",
           width === "lg" && "w-full max-w-2xl",
@@ -64,9 +123,10 @@ export default function Modal({
       >
         {title && (
           <div className="flex items-center justify-between mb-5">
-            <h2 className="text-title text-baltic-800 dark:text-baltic-100">{title}</h2>
+            <h2 id={titleId} className="text-title text-baltic-800 dark:text-baltic-100">{title}</h2>
             <button
               onClick={onClose}
+              aria-label="Close"
               className="text-steel-400 hover:text-baltic-600 dark:hover:text-baltic-300 transition-smooth p-1"
             >
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">

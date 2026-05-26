@@ -6,8 +6,29 @@ export function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+/**
+ * Parse a date string into a *local* Date. A bare "YYYY-MM-DD" is otherwise
+ * parsed as UTC midnight by the Date constructor, which shifts the day for
+ * anyone behind UTC (a task due today reads as yesterday / overdue). Full
+ * ISO timestamps are left to the native parser.
+ */
+function parseLocalDate(dateStr: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return new Date(dateStr);
+}
+
+/** Today as a local "YYYY-MM-DD" — the correct default for a date input. */
+export function todayISO(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function formatDate(dateStr: string) {
-  const date = new Date(dateStr);
+  const date = parseLocalDate(dateStr);
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -55,8 +76,8 @@ export function getFormattedDate() {
 }
 
 export function isOverdue(dateStr: string) {
-  const due = new Date(dateStr);
-  due.setHours(23, 59, 59);
+  const due = parseLocalDate(dateStr);
+  due.setHours(23, 59, 59, 999);
   return due < new Date();
 }
 
@@ -79,7 +100,7 @@ export function projectedFinishTime(minutesRemaining: number): string | null {
  * "Mon, May 12" otherwise. Used to group upcoming tasks by day.
  */
 export function dayLabel(dateStr: string): string {
-  const date = new Date(dateStr);
+  const date = parseLocalDate(dateStr);
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   const target = new Date(date);

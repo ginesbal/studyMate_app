@@ -652,6 +652,16 @@
 }
 
 @layer utilities {
+  /* Hide the scrollbar on a scroll container (e.g. the subject tab strip)
+     while keeping it scrollable by wheel/touch/keyboard. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Type scale — bolder, more playful */
   .text-display {
     @apply text-3xl font-bold tracking-tight;
