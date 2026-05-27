@@ -2218,7 +2218,7 @@ function ManageSubjectsModal({
                             aria-label={`Use color ${c}`}
                             aria-pressed={sel}
                             className={cn(
-                              "press w-6 h-6 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-lavender-900",
+                              "press w-7 h-7 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-lavender-900",
                               sel
                                 ? "ring-2 ring-offset-2 ring-baltic-500 dark:ring-baltic-400 dark:ring-offset-lavender-900"
                                 : "hover:scale-110"
@@ -2623,7 +2623,7 @@ function AddTaskModal({
                       aria-label={`Use color ${c}`}
                       aria-pressed={isSelected}
                       className={cn(
-                        "press w-6 h-6 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-lavender-900",
+                        "press w-7 h-7 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-lavender-900",
                         isSelected
                           ? "ring-2 ring-offset-2 ring-baltic-500 dark:ring-baltic-400 dark:ring-offset-lavender-900"
                           : "hover:scale-110"
