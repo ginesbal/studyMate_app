@@ -416,7 +416,13 @@ export default function TasksPage() {
       const aOverdue = !a.completed && isOverdue(a.dueDate);
       const bOverdue = !b.completed && isOverdue(b.dueDate);
       if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
-      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      const dateDiff =
+        new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      // Same day → higher priority floats up, so within a bucket (where
+      // every task shares a due date) the urgent ones lead.
+      const rank = { high: 0, medium: 1, low: 2 } as const;
+      return rank[a.priority] - rank[b.priority];
     });
   }, [tasks, activeSubjectLabel, activeFilter]);
 
@@ -668,6 +674,11 @@ export default function TasksPage() {
             setSelectedTask(null);
           }}
           onToggle={() => {
+            // Completing from the detail modal gets the same 5s undo as the
+            // row checkbox; marking pending again just toggles.
+            if (!selectedTask.completed) {
+              setLastDone({ id: selectedTask.id, title: selectedTask.title });
+            }
             toggleComplete(selectedTask.id);
             setSelectedTask(null);
           }}
@@ -2484,6 +2495,7 @@ function AddTaskModal({
           placeholder="What needs to be done?"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          maxLength={120}
           autoFocus
         />
 
@@ -2676,6 +2688,11 @@ function AddTaskModal({
               onChange={(e) => setDueDate(e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-xl border border-lavender-200 dark:border-lavender-700 bg-white dark:bg-lavender-900 text-baltic-800 dark:text-baltic-100 outline-none focus:ring-2 focus:ring-baltic-400/30 focus:border-baltic-400 transition-smooth"
             />
+            {(!editingTask || !editingTask.completed) && dueDate < todayISO() && (
+              <p className="text-[11px] text-cream-700 dark:text-cream-400">
+                In the past — this task will show as overdue.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">

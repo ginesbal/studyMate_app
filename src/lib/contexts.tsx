@@ -24,7 +24,11 @@ function load<T>(key: string, fallback: T): T {
 
 function save(key: string, value: unknown) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* quota exceeded / privacy mode — accept the loss rather than crash */
+  }
 }
 
 // ─── Preferences Context (replaces Auth) ───
