@@ -167,7 +167,7 @@ export default function JournalPage() {
             </span>
           )}
         </div>
-        <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-baltic-800 dark:text-baltic-100 leading-[1.1]">
+        <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-baltic-800 dark:text-baltic-100 leading-[1.1] pt-1">
           <span className="highlighter">Journal</span>
           <span className="text-baltic-600 dark:text-baltic-300">.</span>
         </h1>

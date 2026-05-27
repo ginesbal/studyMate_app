@@ -208,7 +208,7 @@ export default function DashboardPage() {
           </span>
           {streak > 0 && <StreakChip streak={streak} last7={last7} />}
         </div>
-        <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-baltic-800 dark:text-baltic-100 leading-[1.1]">
+        <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-baltic-800 dark:text-baltic-100 leading-[1.1] pt-1">
           {getGreeting()},{" "}
           <span className="font-script text-baltic-600 dark:text-baltic-300 text-[1.25em] inline-block translate-y-[2px]">
             {firstName}
