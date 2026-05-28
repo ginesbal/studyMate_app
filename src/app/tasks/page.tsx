@@ -503,9 +503,10 @@ export default function TasksPage() {
         </p>
       </header>
 
-      {/* ── SUBJECT TABS — browser-style. Each tab is an independent
-            view; closing one is non-destructive (subjects/tasks survive),
-            so accidental close + the 5s undo banner is total recovery. ── */}
+      {/* ── SUBJECT TABS — a segmented pill bar above the list. Each tab is
+            an independent view; closing one is non-destructive (subjects/
+            tasks survive), so accidental close + the 5s undo banner is
+            total recovery. ── */}
       <SubjectTabs
         tabs={tabs}
         activeTabId={activeTab?.id ?? ""}
@@ -520,11 +521,8 @@ export default function TasksPage() {
         onManageSubjects={() => setShowManageSubjects(true)}
       />
 
-      {/* ── LIST — paper surface, top corners squared so the tabs above
-            merge in with no visible seam. Subject color shows as the
-            active tab's top stripe (browser theme-line), not as a band
-            across the card. ── */}
-      <StickyCard topFlat delay={140}>
+      {/* ── LIST — self-contained paper surface below the tab bar. ── */}
+      <StickyCard delay={140}>
         <div
           id={TABPANEL_ID}
           role="tabpanel"
@@ -849,29 +847,21 @@ function SubjectTabs({
 
   return (
     <div
-      // z-10 + -mb-px: the row sits one pixel into the card so the active
-      // tab can paint over the card's top border, dissolving the seam.
-      className="sticky-enter relative z-10 -mb-px"
+      className="sticky-enter relative mb-3"
       style={{ "--delay": "70ms" } as CSSProperties}
     >
-      {/* Quiet rule along the bottom of the row that inactive tabs sit on.
-          The active tab is opaque and paints over this rule cleanly. */}
-      <div
-        aria-hidden
-        className="absolute inset-x-0 bottom-0 h-px bg-lavender-200/60 dark:bg-lavender-800/60"
-      />
-
-      <div className="flex items-end gap-1">
+      <div className="flex items-center gap-1">
         {/* Scrollable strip — on a narrow screen the tabs overflow to a
             horizontal scroll (scrollbar hidden) instead of clipping or
             shoving the + off-screen. The + sits OUTSIDE this container so
             its popover isn't clipped by the scroll overflow, and it never
-            scrolls away. */}
+            scrolls away. The py gives focus rings / shadows room so the
+            overflow doesn't crop them. */}
         <div
           id={TABLIST_ID}
           role="tablist"
           aria-orientation="horizontal"
-          className="flex items-end gap-0.5 pt-1 px-1 overflow-x-auto no-scrollbar flex-1 min-w-0"
+          className="flex items-center gap-1 py-1.5 px-0.5 overflow-x-auto no-scrollbar flex-1 min-w-0"
         >
           {tabs.map((tab) => {
             const subject =
@@ -1007,35 +997,21 @@ function SubjectTab({
         }
       }}
       className={cn(
-        "press group relative inline-flex items-center gap-2 whitespace-nowrap cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
-        // Active stays readable but is capped so a long custom label can't
-        // shove the + button off-screen. Inactive flex-shrinks aggressively
-        // with a truncated label so the row never needs horizontal scroll.
+        "press group relative inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer select-none rounded-full border py-1.5 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
+        // Active and inactive are the SAME box — same padding, same 1px
+        // border — so every label sits on one baseline; only the fill,
+        // border color, weight and shadow change. Closable tabs always
+        // reserve the × slot so the label doesn't jump when it appears.
+        closable ? "pl-3.5 pr-1.5" : "px-3.5",
         isActive
-          ? cn(
-              "flex-shrink-0 max-w-[18rem] z-10 py-2 rounded-t-xl bg-white dark:bg-lavender-900 border border-b-0 border-lavender-200/60 dark:border-lavender-800/60 text-baltic-800 dark:text-baltic-100 overflow-hidden",
-              // The All tab has no close button, so even padding keeps its
-              // label balanced instead of tucked toward the right edge.
-              closable ? "pl-4 pr-2" : "px-4",
-            )
-          : "min-w-[5rem] max-w-[10rem] px-3 py-2 rounded-t-lg border border-b-0 border-lavender-200/40 dark:border-lavender-800/40 text-steel-500 dark:text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-300 hover:border-lavender-200/70 dark:hover:border-lavender-700/60 hover:bg-baltic-50/60 dark:hover:bg-baltic-900/30"
+          ? "flex-shrink-0 max-w-[18rem] bg-white dark:bg-lavender-900 border-lavender-200/80 dark:border-lavender-700/70 shadow-sm font-semibold text-baltic-800 dark:text-baltic-100"
+          : "min-w-0 max-w-[12rem] border-transparent font-medium text-steel-500 dark:text-steel-400 hover:bg-white/70 dark:hover:bg-lavender-900/60 hover:text-baltic-700 dark:hover:text-baltic-300"
       )}
       style={{
         transition:
           "background-color 200ms ease, color 200ms ease, transform 160ms var(--ease-out), border-color 200ms ease",
       }}
     >
-      {/* Subject color stripe along the active tab's TOP edge — a
-          browser-style theme-line that signs the lid with the
-          subject's color without tinting the surface. */}
-      {isActive && (
-        <span
-          aria-hidden
-          className="absolute inset-x-0 top-0 h-[2px]"
-          style={{ backgroundColor: color }}
-        />
-      )}
-
       <span
         aria-hidden
         // Opacity moved off inline-style so group-hover/focus can lift the
@@ -1212,7 +1188,7 @@ function AddTabButton({
   }, [open]);
 
   return (
-    <div ref={wrapperRef} className="relative ml-1 mb-0.5 flex-shrink-0">
+    <div ref={wrapperRef} className="relative ml-1 flex-shrink-0">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -1221,7 +1197,7 @@ function AddTabButton({
         aria-haspopup="menu"
         title="Add tab"
         className={cn(
-          "press inline-flex items-center justify-center w-7 h-7 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
+          "press inline-flex items-center justify-center w-8 h-8 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
           open
             ? "bg-white dark:bg-lavender-900 text-baltic-700 dark:text-baltic-200 shadow-sm"
             : "text-steel-400 dark:text-steel-500 hover:text-baltic-700 dark:hover:text-baltic-200 hover:bg-baltic-50/60 dark:hover:bg-baltic-900/30"
