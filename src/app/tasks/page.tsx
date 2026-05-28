@@ -1013,7 +1013,7 @@ function SubjectTab({
         // with a truncated label so the row never needs horizontal scroll.
         isActive
           ? cn(
-              "flex-shrink-0 max-w-[18rem] z-10 pt-3 pb-2 rounded-t-xl bg-white dark:bg-lavender-900 border border-b-0 border-lavender-200/60 dark:border-lavender-800/60 text-baltic-800 dark:text-baltic-100 overflow-hidden",
+              "flex-shrink-0 max-w-[18rem] z-10 py-2 rounded-t-xl bg-white dark:bg-lavender-900 border border-b-0 border-lavender-200/60 dark:border-lavender-800/60 text-baltic-800 dark:text-baltic-100 overflow-hidden",
               // The All tab has no close button, so even padding keeps its
               // label balanced instead of tucked toward the right edge.
               closable ? "pl-4 pr-2" : "px-4",
