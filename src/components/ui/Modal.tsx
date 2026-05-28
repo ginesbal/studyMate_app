@@ -14,6 +14,19 @@ interface ModalProps {
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// Body scroll-lock is a shared global, so ref-count it: with two modals open
+// (e.g. the detail modal handing off to the edit form) the lock must survive
+// until the last one closes rather than the first close clearing it.
+let scrollLockCount = 0;
+function lockBodyScroll() {
+  if (scrollLockCount === 0) document.body.style.overflow = "hidden";
+  scrollLockCount += 1;
+}
+function unlockBodyScroll() {
+  scrollLockCount = Math.max(0, scrollLockCount - 1);
+  if (scrollLockCount === 0) document.body.style.overflow = "";
+}
+
 export default function Modal({
   open,
   onClose,
@@ -25,16 +38,11 @@ export default function Modal({
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
-  // Lock body scroll while open.
+  // Lock body scroll while open (ref-counted across modal instances).
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-    };
+    if (!open) return;
+    lockBodyScroll();
+    return unlockBodyScroll;
   }, [open]);
 
   // Esc to close.
@@ -84,10 +92,15 @@ export default function Modal({
     }
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
+    const active = document.activeElement;
+    // "adrift" = focus is on the panel root or escaped to a now-removed
+    // element; either way pull it back to an edge so Tab can't reach the
+    // page behind the dialog.
+    const adrift = !active || active === panel || !panel.contains(active);
+    if (e.shiftKey && (active === first || adrift)) {
       e.preventDefault();
       last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
+    } else if (!e.shiftKey && (active === last || adrift)) {
       e.preventDefault();
       first.focus();
     }

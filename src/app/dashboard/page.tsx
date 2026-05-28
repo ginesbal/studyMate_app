@@ -20,6 +20,7 @@ import {
   formatTime,
   isOverdue,
   dayLabel,
+  parseLocalDate,
   projectedFinishTime,
   cn,
 } from "@/lib/utils";
@@ -86,7 +87,8 @@ export default function DashboardPage() {
         .filter((t) => !t.completed)
         .sort(
           (a, b) =>
-            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+            parseLocalDate(a.dueDate).getTime() -
+            parseLocalDate(b.dueDate).getTime()
         ),
     [tasks]
   );
@@ -118,7 +120,7 @@ export default function DashboardPage() {
     cap.setHours(23, 59, 59);
 
     for (const t of pendingTasks) {
-      const due = new Date(t.dueDate);
+      const due = parseLocalDate(t.dueDate);
       if (due > cap) continue;
       const label = dayLabel(t.dueDate);
       if (!byLabel.has(label)) {

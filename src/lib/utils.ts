@@ -12,7 +12,7 @@ export function generateId() {
  * anyone behind UTC (a task due today reads as yesterday / overdue). Full
  * ISO timestamps are left to the native parser.
  */
-function parseLocalDate(dateStr: string): Date {
+export function parseLocalDate(dateStr: string): Date {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   return new Date(dateStr);
