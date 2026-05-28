@@ -1004,16 +1004,16 @@ function SubjectTab({
         }
       }}
       className={cn(
-        "press group relative inline-flex items-center gap-2 whitespace-nowrap cursor-pointer select-none py-2 text-xs rounded-t-lg border border-b-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-baltic-950",
-        // Active and inactive are the SAME box — same py, same 1px border —
-        // so every label sits on one baseline. The active tab fills white
-        // and paints over the folder edge, dissolving into the card;
-        // inactive tabs keep a faint outline and rest on the edge. Closable
-        // tabs always reserve the × slot so the label doesn't jump.
+        "press group relative inline-flex items-center gap-2 whitespace-nowrap cursor-pointer select-none text-xs rounded-t-lg border border-b-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-baltic-950",
+        // Both tabs share the SAME bottom padding (pb-2) and the SAME 1px
+        // border, so every label sits on one baseline. The active tab is
+        // taller via extra TOP padding (a raised lid) and fills white,
+        // painting over the folder edge to dissolve into the card.
+        // Closable tabs always reserve the × slot so the label doesn't jump.
         closable ? "pl-3.5 pr-1.5" : "px-3.5",
         isActive
-          ? "flex-shrink-0 max-w-[18rem] overflow-hidden bg-white dark:bg-lavender-900 border-lavender-200/70 dark:border-lavender-700/70 font-semibold text-baltic-800 dark:text-baltic-100"
-          : "min-w-0 max-w-[12rem] border-lavender-200/40 dark:border-lavender-800/40 font-medium text-steel-500 dark:text-steel-400 hover:border-lavender-200/70 dark:hover:border-lavender-700/50 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-baltic-50/50 dark:hover:bg-baltic-900/25"
+          ? "flex-shrink-0 max-w-[18rem] overflow-hidden pt-3 pb-2 bg-white dark:bg-lavender-900 border-lavender-200/70 dark:border-lavender-700/70 font-semibold text-baltic-800 dark:text-baltic-100"
+          : "min-w-0 max-w-[12rem] py-2 border-lavender-200/40 dark:border-lavender-800/40 font-medium text-steel-500 dark:text-steel-400 hover:border-lavender-200/70 dark:hover:border-lavender-700/50 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-baltic-50/50 dark:hover:bg-baltic-900/25"
       )}
       style={{
         transition:
