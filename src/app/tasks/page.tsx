@@ -25,6 +25,7 @@ import {
   getWeekday,
   getFormattedDate,
   generateId,
+  todayISO,
 } from "@/lib/utils";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -151,8 +152,10 @@ function tabDisplayLabel(tab: SubjectTab): string {
 }
 
 export default function TasksPage() {
-  const { tasks, addTask, toggleComplete, deleteTask } = useTasks();
-  const { subjects, getSubject, addSubject } = useSubjects();
+  const { tasks, addTask, updateTask, toggleComplete, deleteTask, reassignTasks } =
+    useTasks();
+  const { subjects, getSubject, addSubject, updateSubject, deleteSubject } =
+    useSubjects();
 
   // Tabs are saved views. They live in their own collection so closing
   // a tab is non-destructive — the underlying subject and its tasks
@@ -176,7 +179,12 @@ export default function TasksPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [addModalSubject, setAddModalSubject] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  // A non-null editingTask opens the task form in edit mode. It's the
+  // same modal used for "New task", just pre-filled and saving via
+  // updateTask instead of addTask.
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showAddSubject, setShowAddSubject] = useState(false);
+  const [showManageSubjects, setShowManageSubjects] = useState(false);
 
   // Persist on change. No tabsLoaded gate needed because the lazy init
   // above guarantees `tabs` is never the placeholder `[]` when this runs.
@@ -308,6 +316,44 @@ export default function TasksPage() {
     [subjects, addSubject, handleAddTabForSubject]
   );
 
+  // Rename/recolor a subject. A label change has to cascade: tasks store
+  // the subject by label, and so do the saved tab views — rename without
+  // the cascade would orphan every task under the old name.
+  const handleRenameSubject = useCallback(
+    (id: string, newLabel: string, newColor: string) => {
+      const trimmed = newLabel.trim();
+      if (!trimmed) return;
+      const subject = subjects.find((s) => s.id === id);
+      if (!subject) return;
+      const taken = subjects.some(
+        (s) => s.id !== id && s.label.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (taken) return;
+      updateSubject(id, { label: trimmed, color: newColor });
+      if (trimmed !== subject.label) {
+        reassignTasks(subject.label, trimmed);
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.subjectLabel === subject.label
+              ? { ...t, subjectLabel: trimmed }
+              : t
+          )
+        );
+      }
+    },
+    [subjects, updateSubject, reassignTasks]
+  );
+
+  // Delete a subject. Its tab views are dropped by the orphan-cleanup
+  // effect; tasks keep their label and become "unfiled" (recreating the
+  // subject with the same name re-files them), so nothing is destroyed.
+  const handleDeleteSubject = useCallback(
+    (id: string) => {
+      deleteSubject(id);
+    },
+    [deleteSubject]
+  );
+
   // ── Derived state from active tab ─────────────────────────
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? null;
@@ -348,6 +394,13 @@ export default function TasksPage() {
           total: 0,
         };
 
+  // Total tasks per subject, for the manage-subjects modal's "n tasks" hint.
+  const subjectTaskCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const s of subjects) m[s.label] = stats.bySubject[s.label]?.total ?? 0;
+    return m;
+  }, [subjects, stats]);
+
   const filteredTasks = useMemo(() => {
     let result = tasks;
     if (activeSubjectLabel !== null) {
@@ -363,7 +416,13 @@ export default function TasksPage() {
       const aOverdue = !a.completed && isOverdue(a.dueDate);
       const bOverdue = !b.completed && isOverdue(b.dueDate);
       if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
-      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      const dateDiff =
+        new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      // Same day → higher priority floats up, so within a bucket (where
+      // every task shares a due date) the urgent ones lead.
+      const rank = { high: 0, medium: 1, low: 2 } as const;
+      return rank[a.priority] - rank[b.priority];
     });
   }, [tasks, activeSubjectLabel, activeFilter]);
 
@@ -431,7 +490,11 @@ export default function TasksPage() {
             <StatusChip pending={stats.all.pending} overdue={stats.all.overdue} />
           )}
         </div>
-        <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-baltic-800 dark:text-baltic-100 leading-[1.1]">
+        {/* pt-1 gives the cap tops room: Plus Jakarta Sans' natural line
+            box is ~1.27, so leading-[1.1] alone lets the glyph tops sit
+            above the box and clip. Padding (not a taller line-height)
+            keeps the highlighter swipe aligned to the text. */}
+        <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-baltic-800 dark:text-baltic-100 leading-[1.1] pt-1">
           <span className="highlighter">Tasks</span>
           <span className="text-baltic-600 dark:text-baltic-300">.</span>
         </h1>
@@ -440,9 +503,10 @@ export default function TasksPage() {
         </p>
       </header>
 
-      {/* ── SUBJECT TABS — browser-style. Each tab is an independent
-            view; closing one is non-destructive (subjects/tasks survive),
-            so accidental close + the 5s undo banner is total recovery. ── */}
+      {/* ── SUBJECT TABS — folder tabs along the top of the list. Each tab
+            is an independent view; closing one is non-destructive (subjects/
+            tasks survive), so accidental close + the 5s undo banner is
+            total recovery. ── */}
       <SubjectTabs
         tabs={tabs}
         activeTabId={activeTab?.id ?? ""}
@@ -454,12 +518,11 @@ export default function TasksPage() {
         onRename={handleRenameTab}
         onAddTabForSubject={handleAddTabForSubject}
         onCreateNewSubject={() => setShowAddSubject(true)}
+        onManageSubjects={() => setShowManageSubjects(true)}
       />
 
-      {/* ── LIST — paper surface, top corners squared so the tabs above
-            merge in with no visible seam. Subject color shows as the
-            active tab's top stripe (browser theme-line), not as a band
-            across the card. ── */}
+      {/* ── LIST — paper surface, top corners squared so the active folder
+            tab dissolves into it with no seam. ── */}
       <StickyCard topFlat delay={140}>
         <div
           id={TABPANEL_ID}
@@ -578,13 +641,25 @@ export default function TasksPage() {
         existingLabels={subjects.map((s) => s.label)}
       />
 
+      <ManageSubjectsModal
+        open={showManageSubjects}
+        onClose={() => setShowManageSubjects(false)}
+        subjects={subjects}
+        counts={subjectTaskCounts}
+        onRename={handleRenameSubject}
+        onDelete={handleDeleteSubject}
+      />
+
       <AddTaskModal
-        open={showAddModal}
+        open={showAddModal || editingTask !== null}
+        editingTask={editingTask}
         onClose={() => {
           setShowAddModal(false);
           setAddModalSubject(null);
+          setEditingTask(null);
         }}
         onAdd={addTask}
+        onUpdate={updateTask}
         initialSubject={addModalSubject}
       />
 
@@ -593,7 +668,16 @@ export default function TasksPage() {
           task={selectedTask}
           subject={getSubject(selectedTask.subject)}
           onClose={() => setSelectedTask(null)}
+          onEdit={() => {
+            setEditingTask(selectedTask);
+            setSelectedTask(null);
+          }}
           onToggle={() => {
+            // Completing from the detail modal gets the same 5s undo as the
+            // row checkbox; marking pending again just toggles.
+            if (!selectedTask.completed) {
+              setLastDone({ id: selectedTask.id, title: selectedTask.title });
+            }
             toggleComplete(selectedTask.id);
             setSelectedTask(null);
           }}
@@ -720,6 +804,7 @@ function SubjectTabs({
   onRename,
   onAddTabForSubject,
   onCreateNewSubject,
+  onManageSubjects,
 }: {
   tabs: SubjectTab[];
   activeTabId: string;
@@ -731,6 +816,7 @@ function SubjectTabs({
   onRename: (tabId: string, label: string) => void;
   onAddTabForSubject: (subjectLabel: string | null) => void;
   onCreateNewSubject: () => void;
+  onManageSubjects: () => void;
 }) {
   // Refs keyed by tab id so arrow-key navigation can move focus without
   // touching the DOM directly from a child. WAI-ARIA tablist pattern.
@@ -762,62 +848,68 @@ function SubjectTabs({
 
   return (
     <div
-      // z-10 + -mb-px: the row sits one pixel into the card so the active
-      // tab can paint over the card's top border, dissolving the seam.
       className="sticky-enter relative z-10 -mb-px"
       style={{ "--delay": "70ms" } as CSSProperties}
     >
-      {/* Quiet rule along the bottom of the row that inactive tabs sit on.
-          The active tab is opaque and paints over this rule cleanly. */}
+      {/* The folder edge — the hairline every inactive tab rests on. The
+          active tab is opaque and paints over it, dissolving into the card
+          below so the two read as one continuous surface. */}
       <div
         aria-hidden
-        className="absolute inset-x-0 bottom-0 h-px bg-lavender-200/60 dark:bg-lavender-800/60"
+        className="absolute inset-x-0 bottom-0 h-px bg-lavender-200/70 dark:bg-lavender-800/70"
       />
-
-      <div
-        id={TABLIST_ID}
-        role="tablist"
-        aria-orientation="horizontal"
-        className="flex items-end gap-0.5 pt-1 px-1 -mx-1"
-      >
-        {tabs.map((tab) => {
-          const subject =
-            tab.subjectLabel === null
-              ? null
-              : subjects.find((s) => s.label === tab.subjectLabel) ?? null;
-          const color = subject?.color ?? "#9faac6";
-          const pending =
-            tab.subjectLabel === null
-              ? totalPending
-              : counts[tab.subjectLabel]?.pending ?? 0;
-          // The "All" tab is the home view — never closable. Subject
-          // tabs are always closable; even the last one of a kind, since
-          // the user can re-open from the + popover.
-          const closable = tab.subjectLabel !== null;
-          return (
-            <SubjectTab
-              key={tab.id}
-              tab={tab}
-              color={color}
-              pending={pending}
-              isActive={tab.id === activeTabId}
-              closable={closable}
-              tabPanelId={TABPANEL_ID}
-              tabRef={(el) => {
-                tabRefs.current[tab.id] = el;
-              }}
-              onSelect={() => onSelect(tab.id)}
-              onClose={() => onClose(tab.id)}
-              onRename={(label) => onRename(tab.id, label)}
-              onMoveFocus={(direction) => handleMoveFocus(tab.id, direction)}
-            />
-          );
-        })}
+      <div className="flex items-end gap-1">
+        {/* Tabs share one row; inactive labels truncate and the active one
+            is capped so a long name can't shove the + off-screen, with
+            horizontal scroll (bar hidden) as a last resort. The + sits
+            OUTSIDE this strip so its popover isn't clipped. The first tab is
+            flush-left so it lines up with the card's edge — no corner step. */}
+        <div
+          id={TABLIST_ID}
+          role="tablist"
+          aria-orientation="horizontal"
+          className="flex items-end gap-1 pt-1 overflow-x-auto no-scrollbar flex-1 min-w-0"
+        >
+          {tabs.map((tab) => {
+            const subject =
+              tab.subjectLabel === null
+                ? null
+                : subjects.find((s) => s.label === tab.subjectLabel) ?? null;
+            const color = subject?.color ?? "#9faac6";
+            const pending =
+              tab.subjectLabel === null
+                ? totalPending
+                : counts[tab.subjectLabel]?.pending ?? 0;
+            // The "All" tab is the home view — never closable. Subject
+            // tabs are always closable; even the last one of a kind, since
+            // the user can re-open from the + popover.
+            const closable = tab.subjectLabel !== null;
+            return (
+              <SubjectTab
+                key={tab.id}
+                tab={tab}
+                color={color}
+                pending={pending}
+                isActive={tab.id === activeTabId}
+                closable={closable}
+                tabPanelId={TABPANEL_ID}
+                tabRef={(el) => {
+                  tabRefs.current[tab.id] = el;
+                }}
+                onSelect={() => onSelect(tab.id)}
+                onClose={() => onClose(tab.id)}
+                onRename={(label) => onRename(tab.id, label)}
+                onMoveFocus={(direction) => handleMoveFocus(tab.id, direction)}
+              />
+            );
+          })}
+        </div>
 
         <AddTabButton
           subjects={subjects}
           onAddTabForSubject={onAddTabForSubject}
           onCreateNewSubject={onCreateNewSubject}
+          onManageSubjects={onManageSubjects}
         />
       </div>
     </div>
@@ -912,22 +1004,23 @@ function SubjectTab({
         }
       }}
       className={cn(
-        "press group relative inline-flex items-center gap-2 whitespace-nowrap cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-baltic-950",
-        // Active stays readable but is capped so a long custom label can't
-        // shove the + button off-screen. Inactive flex-shrinks aggressively
-        // with a truncated label so the row never needs horizontal scroll.
+        "press group relative inline-flex items-center gap-2 whitespace-nowrap cursor-pointer select-none text-xs rounded-t-lg border border-b-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-baltic-950",
+        // Both tabs share the SAME bottom padding (pb-2) and the SAME 1px
+        // border, so every label sits on one baseline. The active tab is
+        // taller via extra TOP padding (a raised lid) and fills white,
+        // painting over the folder edge to dissolve into the card.
+        // Closable tabs always reserve the × slot so the label doesn't jump.
+        closable ? "pl-3.5 pr-1.5" : "px-3.5",
         isActive
-          ? "flex-shrink-0 max-w-[18rem] z-10 pl-4 pr-2 py-2.5 rounded-t-xl bg-white dark:bg-lavender-900 border border-b-0 border-lavender-200/60 dark:border-lavender-800/60 text-baltic-800 dark:text-baltic-100 overflow-hidden"
-          : "min-w-[5rem] max-w-[10rem] px-3 py-2 rounded-t-lg text-steel-500 dark:text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-baltic-50/60 dark:hover:bg-baltic-900/30"
+          ? "flex-shrink-0 max-w-[18rem] overflow-hidden pt-3 pb-2 bg-white dark:bg-lavender-900 border-lavender-200/70 dark:border-lavender-700/70 font-semibold text-baltic-800 dark:text-baltic-100"
+          : "min-w-0 max-w-[12rem] py-2 border-lavender-200/40 dark:border-lavender-800/40 font-medium text-steel-500 dark:text-steel-400 hover:border-lavender-200/70 dark:hover:border-lavender-700/50 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-baltic-50/50 dark:hover:bg-baltic-900/25"
       )}
       style={{
         transition:
           "background-color 200ms ease, color 200ms ease, transform 160ms var(--ease-out), border-color 200ms ease",
       }}
     >
-      {/* Subject color stripe along the active tab's TOP edge — a
-          browser-style theme-line that signs the lid with the
-          subject's color without tinting the surface. */}
+      {/* Subject color signs the active folder tab along its top edge. */}
       {isActive && (
         <span
           aria-hidden
@@ -1061,10 +1154,12 @@ function AddTabButton({
   subjects,
   onAddTabForSubject,
   onCreateNewSubject,
+  onManageSubjects,
 }: {
   subjects: UserSubject[];
   onAddTabForSubject: (subjectLabel: string | null) => void;
   onCreateNewSubject: () => void;
+  onManageSubjects: () => void;
 }) {
   const [open, setOpen] = useState(false);
   // Which edge the popover anchors to. Default left (extend right). Flip to
@@ -1225,6 +1320,36 @@ function AddTabButton({
               </svg>
               New subject…
             </button>
+            {subjects.length > 0 && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onManageSubjects();
+                  setOpen(false);
+                }}
+                className="press w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-steel-500 dark:text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-lavender-50 dark:hover:bg-lavender-800/60 focus:outline-none focus:bg-lavender-50 dark:focus:bg-lavender-800/60"
+                style={{
+                  transition:
+                    "background-color 160ms ease, color 160ms ease, transform 160ms var(--ease-out)",
+                }}
+              >
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M2 3h8M2 6h8M2 9h5" />
+                </svg>
+                Rename or delete…
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1961,6 +2086,277 @@ function AddSubjectModal({
 }
 
 /* ─────────────────────────────────────────────────────────────
+   MANAGE SUBJECTS MODAL — rename (with task + tab cascade),
+   recolor, or delete. Renaming re-labels every task under the old
+   name so nothing is orphaned; deleting drops the subject's tab
+   views and leaves its tasks unfiled (recreating the subject by
+   name re-files them), so a delete is recoverable, not destructive.
+   ───────────────────────────────────────────────────────────── */
+
+function ManageSubjectsModal({
+  open,
+  onClose,
+  subjects,
+  counts,
+  onRename,
+  onDelete,
+}: {
+  open: boolean;
+  onClose: () => void;
+  subjects: UserSubject[];
+  counts: Record<string, number>;
+  onRename: (id: string, label: string, color: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftLabel, setDraftLabel] = useState("");
+  const [draftColor, setDraftColor] = useState<string>(SUBJECT_COLORS[0]);
+  const [error, setError] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setEditingId(null);
+      setDraftLabel("");
+      setError("");
+      setConfirmDeleteId(null);
+    }
+  }, [open]);
+
+  const startEdit = (s: UserSubject) => {
+    setConfirmDeleteId(null);
+    setError("");
+    setDraftLabel(s.label);
+    setDraftColor(s.color);
+    setEditingId(s.id);
+  };
+
+  const commitEdit = (s: UserSubject) => {
+    const trimmed = draftLabel.trim();
+    if (!trimmed) {
+      setError("Name can't be empty.");
+      return;
+    }
+    if (
+      subjects.some(
+        (o) => o.id !== s.id && o.label.toLowerCase() === trimmed.toLowerCase()
+      )
+    ) {
+      setError("Another subject already has that name.");
+      return;
+    }
+    onRename(s.id, trimmed, draftColor);
+    setEditingId(null);
+    setError("");
+  };
+
+  const requestDelete = (s: UserSubject) => {
+    if (confirmDeleteId === s.id) {
+      onDelete(s.id);
+      setConfirmDeleteId(null);
+    } else {
+      setEditingId(null);
+      setConfirmDeleteId(s.id);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Manage subjects" width="sm">
+      {subjects.length === 0 ? (
+        <p className="text-sm text-steel-500 dark:text-steel-400 py-2">
+          No subjects yet. Add one from the + on the tab row.
+        </p>
+      ) : (
+        <ul className="space-y-1.5 max-h-[60vh] overflow-y-auto -mx-1 px-1">
+          {subjects.map((s) => {
+            const isEditing = editingId === s.id;
+            const isConfirming = confirmDeleteId === s.id;
+            const count = counts[s.label] ?? 0;
+            return (
+              <li
+                key={s.id}
+                className="rounded-xl border border-lavender-200/70 dark:border-lavender-800/60 px-3 py-2.5"
+              >
+                {isEditing ? (
+                  <div className="space-y-3">
+                    <input
+                      autoFocus
+                      value={draftLabel}
+                      onChange={(e) => {
+                        setDraftLabel(e.target.value);
+                        if (error) setError("");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitEdit(s);
+                        } else if (e.key === "Escape") {
+                          e.preventDefault();
+                          setEditingId(null);
+                          setError("");
+                        }
+                      }}
+                      maxLength={30}
+                      aria-label="Subject name"
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-lavender-200 dark:border-lavender-700 bg-white dark:bg-lavender-900 text-baltic-800 dark:text-baltic-100 placeholder:text-steel-400 outline-none focus:ring-2 focus:ring-baltic-400/30 focus:border-baltic-400 transition-smooth"
+                    />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {SUBJECT_COLORS.map((c) => {
+                        const sel = draftColor === c;
+                        return (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => setDraftColor(c)}
+                            aria-label={`Use color ${c}`}
+                            aria-pressed={sel}
+                            className={cn(
+                              "press w-7 h-7 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-lavender-900",
+                              sel
+                                ? "ring-2 ring-offset-2 ring-baltic-500 dark:ring-baltic-400 dark:ring-offset-lavender-900"
+                                : "hover:scale-110"
+                            )}
+                            style={{
+                              backgroundColor: c,
+                              transition:
+                                "transform 160ms var(--ease-out), box-shadow 160ms ease",
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                    {error && (
+                      <p className="text-xs text-red-500 dark:text-red-400">
+                        {error}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => commitEdit(s)}
+                        disabled={!draftLabel.trim()}
+                        className="press px-3 py-1.5 text-xs font-semibold rounded-full bg-baltic-700 dark:bg-baltic-500 text-white hover:bg-baltic-800 dark:hover:bg-baltic-400 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70"
+                        style={{
+                          transition:
+                            "background-color 160ms ease, transform 160ms var(--ease-out)",
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(null);
+                          setError("");
+                        }}
+                        className="press px-3 py-1.5 text-xs font-medium rounded-full text-steel-500 dark:text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-lavender-100/60 dark:hover:bg-lavender-800/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70"
+                        style={{
+                          transition:
+                            "color 160ms ease, transform 160ms var(--ease-out)",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <span
+                        aria-hidden
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: s.color }}
+                      />
+                      <span className="flex-1 min-w-0 truncate text-sm font-medium text-baltic-800 dark:text-baltic-100">
+                        {s.label}
+                      </span>
+                      <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-steel-400 tabular-nums flex-shrink-0">
+                        {count} {count === 1 ? "task" : "tasks"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => startEdit(s)}
+                        aria-label={`Rename ${s.label}`}
+                        className="press flex-shrink-0 p-1.5 -m-0.5 rounded-md text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-200 hover:bg-lavender-100/70 dark:hover:bg-lavender-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70"
+                        style={{
+                          transition:
+                            "color 160ms ease, background-color 160ms ease, transform 160ms var(--ease-out)",
+                        }}
+                      >
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 14 14"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden
+                        >
+                          <path d="M9.5 2.5l2 2L5 11l-2.5.5L3 9z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => requestDelete(s)}
+                        aria-label={
+                          isConfirming
+                            ? `Confirm delete ${s.label}`
+                            : `Delete ${s.label}`
+                        }
+                        className={cn(
+                          "press flex-shrink-0 p-1.5 -m-0.5 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/70",
+                          isConfirming
+                            ? "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40"
+                            : "text-steel-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
+                        )}
+                        style={{
+                          transition:
+                            "color 160ms ease, background-color 160ms ease, transform 160ms var(--ease-out)",
+                        }}
+                      >
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 14 14"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden
+                        >
+                          <path d="M3 4h8M5.5 4V2.5h3V4M4 4l.5 7.5h5L10 4" />
+                        </svg>
+                      </button>
+                    </div>
+                    {isConfirming && (
+                      <p className="mt-2 text-[11px] text-red-500 dark:text-red-400">
+                        {count > 0
+                          ? `${count} ${count === 1 ? "task" : "tasks"} will become unfiled. `
+                          : ""}
+                        Delete again to confirm.
+                      </p>
+                    )}
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <div className="flex justify-end pt-4">
+        <Button variant="ghost" type="button" onClick={onClose}>
+          Done
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
    ADD TASK MODAL — same fields, calmer composition. Subject and
    priority are chip selectors so the form reads as one rhythm
    instead of a stack of mismatched inputs.
@@ -1970,46 +2366,100 @@ function AddTaskModal({
   open,
   onClose,
   onAdd,
+  onUpdate,
+  editingTask,
   initialSubject,
 }: {
   open: boolean;
   onClose: () => void;
   onAdd: (task: Omit<Task, "id" | "createdAt" | "completed">) => void;
+  onUpdate?: (id: string, updates: Partial<Task>) => void;
+  editingTask?: Task | null;
   initialSubject?: string | null;
 }) {
-  const { subjects } = useSubjects();
+  const { subjects, addSubject } = useSubjects();
+  const isEditing = editingTask != null;
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [subject, setSubject] = useState<string>(
     initialSubject || subjects[0]?.label || ""
   );
   const [priority, setPriority] = useState<"low" | "medium" | "high">("medium");
-  const [dueDate, setDueDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+  const [dueDate, setDueDate] = useState(todayISO());
 
+  // Inline "new subject" creation, so a task can be filed under a subject
+  // that doesn't exist yet without leaving the form.
+  const [addingSubject, setAddingSubject] = useState(false);
+  const [newSubjectLabel, setNewSubjectLabel] = useState("");
+  const [newSubjectColor, setNewSubjectColor] = useState<string>(
+    SUBJECT_COLORS[0]
+  );
+  const [subjectError, setSubjectError] = useState("");
+
+  // Seed the form whenever it opens — from the task when editing, or from
+  // defaults when creating. `subjects` is intentionally left out of the deps:
+  // re-seeding when the list changes would wipe the user's input the moment
+  // they add a subject inline.
   useEffect(() => {
-    if (open && initialSubject) {
-      setSubject(initialSubject);
+    if (!open) return;
+    if (editingTask) {
+      setTitle(editingTask.title);
+      setDescription(editingTask.description);
+      setSubject(editingTask.subject);
+      setPriority(editingTask.priority);
+      setDueDate(editingTask.dueDate);
+    } else {
+      setTitle("");
+      setDescription("");
+      setSubject(initialSubject || subjects[0]?.label || "");
+      setPriority("medium");
+      setDueDate(todayISO());
     }
-  }, [open, initialSubject]);
+    setAddingSubject(false);
+    setNewSubjectLabel("");
+    setNewSubjectColor(SUBJECT_COLORS[0]);
+    setSubjectError("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editingTask, initialSubject]);
+
+  const handleAddSubject = useCallback(() => {
+    const trimmed = newSubjectLabel.trim();
+    if (!trimmed) return;
+    if (subjects.some((s) => s.label.toLowerCase() === trimmed.toLowerCase())) {
+      setSubjectError("A subject with that name already exists.");
+      return;
+    }
+    addSubject(trimmed, newSubjectColor);
+    setSubject(trimmed);
+    setAddingSubject(false);
+    setNewSubjectLabel("");
+    setNewSubjectColor(SUBJECT_COLORS[0]);
+    setSubjectError("");
+  }, [newSubjectLabel, newSubjectColor, subjects, addSubject]);
+
+  const cancelAddSubject = useCallback(() => {
+    setAddingSubject(false);
+    setNewSubjectLabel("");
+    setSubjectError("");
+  }, []);
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      if (!title.trim()) return;
-      onAdd({
+      if (!title.trim() || !subject) return;
+      const payload = {
         title: title.trim(),
         description: description.trim(),
         subject,
         priority,
         dueDate,
-      });
-      setTitle("");
-      setDescription("");
-      setSubject(subjects[0]?.label || "");
-      setPriority("medium");
-      setDueDate(new Date().toISOString().split("T")[0]);
+      };
+      if (editingTask && onUpdate) {
+        onUpdate(editingTask.id, payload);
+      } else {
+        onAdd(payload);
+      }
       onClose();
     },
     [
@@ -2018,14 +2468,19 @@ function AddTaskModal({
       subject,
       priority,
       dueDate,
+      editingTask,
+      onUpdate,
       onAdd,
       onClose,
-      subjects,
     ]
   );
 
   return (
-    <Modal open={open} onClose={onClose} title="New task">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={isEditing ? "Edit task" : "New task"}
+    >
       <form onSubmit={handleSubmit} className="space-y-5">
         <Input
           id="task-title"
@@ -2033,6 +2488,7 @@ function AddTaskModal({
           placeholder="What needs to be done?"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          maxLength={120}
           autoFocus
         />
 
@@ -2049,7 +2505,9 @@ function AddTaskModal({
           />
         </div>
 
-        {/* Subject — chip selector, color-dot per option */}
+        {/* Subject — chip selector, color-dot per option, with an inline
+            "New" chip so a missing subject can be created without leaving
+            the form. */}
         <div className="space-y-1.5">
           <label className="text-label text-baltic-600 dark:text-baltic-300">
             Subject
@@ -2085,7 +2543,131 @@ function AddTaskModal({
                 </button>
               );
             })}
+
+            {/* New-subject toggle — dashed so it reads as "add", not a
+                selectable subject. */}
+            <button
+              type="button"
+              onClick={() => {
+                setAddingSubject((v) => !v);
+                setSubjectError("");
+              }}
+              aria-expanded={addingSubject}
+              className={cn(
+                "press inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-dashed focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70",
+                addingSubject
+                  ? "border-baltic-400 dark:border-baltic-500 bg-baltic-50 dark:bg-baltic-900/40 text-baltic-700 dark:text-baltic-200"
+                  : "border-lavender-300 dark:border-lavender-700 text-steel-500 dark:text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-300 hover:border-lavender-400 dark:hover:border-lavender-600"
+              )}
+              style={{
+                transition:
+                  "background-color 160ms ease, color 160ms ease, transform 160ms var(--ease-out), border-color 160ms ease",
+              }}
+            >
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                aria-hidden
+              >
+                <path d="M6 2v8M2 6h8" />
+              </svg>
+              New
+            </button>
           </div>
+
+          {/* Inline create panel — name + color, mirrors the New-subject
+              modal but stays in the task flow. */}
+          {addingSubject && (
+            <div className="dropdown-enter mt-2 p-3 rounded-xl border border-lavender-200 dark:border-lavender-700 bg-lavender-50/60 dark:bg-lavender-900/40 space-y-3">
+              <input
+                autoFocus
+                value={newSubjectLabel}
+                onChange={(e) => {
+                  setNewSubjectLabel(e.target.value);
+                  if (subjectError) setSubjectError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddSubject();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelAddSubject();
+                  }
+                }}
+                placeholder="New subject name"
+                maxLength={30}
+                aria-label="New subject name"
+                className="w-full px-3 py-2 text-sm rounded-lg border border-lavender-200 dark:border-lavender-700 bg-white dark:bg-lavender-900 text-baltic-800 dark:text-baltic-100 placeholder:text-steel-400 outline-none focus:ring-2 focus:ring-baltic-400/30 focus:border-baltic-400 transition-smooth"
+              />
+              <div className="flex flex-wrap items-center gap-1.5">
+                {SUBJECT_COLORS.map((c) => {
+                  const isSelected = newSubjectColor === c;
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setNewSubjectColor(c)}
+                      aria-label={`Use color ${c}`}
+                      aria-pressed={isSelected}
+                      className={cn(
+                        "press w-7 h-7 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-lavender-900",
+                        isSelected
+                          ? "ring-2 ring-offset-2 ring-baltic-500 dark:ring-baltic-400 dark:ring-offset-lavender-900"
+                          : "hover:scale-110"
+                      )}
+                      style={{
+                        backgroundColor: c,
+                        transition:
+                          "transform 160ms var(--ease-out), box-shadow 160ms ease",
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              {subjectError && (
+                <p className="text-xs text-red-500 dark:text-red-400">
+                  {subjectError}
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddSubject}
+                  disabled={!newSubjectLabel.trim()}
+                  className="press px-3 py-1.5 text-xs font-semibold rounded-full bg-baltic-700 dark:bg-baltic-500 text-white hover:bg-baltic-800 dark:hover:bg-baltic-400 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70"
+                  style={{
+                    transition:
+                      "background-color 160ms ease, transform 160ms var(--ease-out)",
+                  }}
+                >
+                  Add subject
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelAddSubject}
+                  className="press px-3 py-1.5 text-xs font-medium rounded-full text-steel-500 dark:text-steel-400 hover:text-baltic-700 dark:hover:text-baltic-300 hover:bg-lavender-100/60 dark:hover:bg-lavender-800/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-baltic-400/70"
+                  style={{
+                    transition:
+                      "color 160ms ease, transform 160ms var(--ease-out)",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {subjects.length === 0 && !addingSubject && (
+            <p className="text-xs text-steel-400 dark:text-steel-500">
+              No subjects yet — add one to file this task.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -2099,6 +2681,11 @@ function AddTaskModal({
               onChange={(e) => setDueDate(e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-xl border border-lavender-200 dark:border-lavender-700 bg-white dark:bg-lavender-900 text-baltic-800 dark:text-baltic-100 outline-none focus:ring-2 focus:ring-baltic-400/30 focus:border-baltic-400 transition-smooth"
             />
+            {(!editingTask || !editingTask.completed) && dueDate < todayISO() && (
+              <p className="text-[11px] text-cream-700 dark:text-cream-400">
+                In the past — this task will show as overdue.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -2136,8 +2723,8 @@ function AddTaskModal({
           <Button variant="ghost" type="button" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={!title.trim()}>
-            Create task
+          <Button type="submit" disabled={!title.trim() || !subject}>
+            {isEditing ? "Save changes" : "Create task"}
           </Button>
         </div>
       </form>
@@ -2155,12 +2742,14 @@ function TaskDetailModal({
   task,
   subject,
   onClose,
+  onEdit,
   onToggle,
   onDelete,
 }: {
   task: Task;
   subject: UserSubject | undefined;
   onClose: () => void;
+  onEdit: () => void;
   onToggle: () => void;
   onDelete: () => void;
 }) {
@@ -2232,13 +2821,18 @@ function TaskDetailModal({
           )}
         </div>
 
-        <div className="flex gap-3 pt-4 border-t border-lavender-100 dark:border-lavender-800/60">
-          <Button variant="secondary" onClick={onToggle} className="flex-1">
+        <div className="space-y-3 pt-4 border-t border-lavender-100 dark:border-lavender-800/60">
+          <Button variant="secondary" onClick={onToggle} className="w-full">
             {task.completed ? "Mark pending" : "Mark complete"}
           </Button>
-          <Button variant="danger" onClick={onDelete}>
-            Delete
-          </Button>
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={onEdit} className="flex-1">
+              Edit task
+            </Button>
+            <Button variant="danger" onClick={onDelete} className="flex-1">
+              Delete
+            </Button>
+          </div>
         </div>
       </div>
     </Modal>

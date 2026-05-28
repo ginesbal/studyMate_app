@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useCallback } from "react";
+import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 
-const PRESETS = [5, 15, 25, 45, 60, 90, 120];
-const MIN = 5;
-const MAX = 120;
-const STEP = 5;
+export const DURATION_MIN = 5;
+export const DURATION_MAX = 120;
+export const DURATION_STEP = 5;
+
+const PRESETS = [25, 45, 60, 90];
 
 interface DurationPickerProps {
   value: number;
@@ -15,57 +16,12 @@ interface DurationPickerProps {
 }
 
 function clamp(v: number) {
-  return Math.max(MIN, Math.min(MAX, v));
-}
-
-function snapToStep(v: number) {
-  return Math.round(v / STEP) * STEP;
+  return Math.max(DURATION_MIN, Math.min(DURATION_MAX, v));
 }
 
 export default function DurationPicker({ value, onChange, disabled }: DurationPickerProps) {
-  const dragRef = useRef<{ startY: number; startVal: number } | null>(null);
-
-  const increment = useCallback(() => {
-    onChange(clamp(value + STEP));
-  }, [value, onChange]);
-
-  const decrement = useCallback(() => {
-    onChange(clamp(value - STEP));
-  }, [value, onChange]);
-
-  // Mouse wheel on the number
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
-      e.preventDefault();
-      const delta = e.deltaY < 0 ? STEP : -STEP;
-      onChange(clamp(value + delta));
-    },
-    [value, onChange]
-  );
-
-  // Touch/mouse drag on the number
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      if (disabled) return;
-      dragRef.current = { startY: e.clientY, startVal: value };
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    },
-    [value, disabled]
-  );
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!dragRef.current) return;
-      const dy = dragRef.current.startY - e.clientY;
-      const delta = Math.round(dy / 8) * STEP;
-      onChange(clamp(snapToStep(dragRef.current.startVal + delta)));
-    },
-    [onChange]
-  );
-
-  const handlePointerUp = useCallback(() => {
-    dragRef.current = null;
-  }, []);
+  const increment = useCallback(() => onChange(clamp(value + DURATION_STEP)), [value, onChange]);
+  const decrement = useCallback(() => onChange(clamp(value - DURATION_STEP)), [value, onChange]);
 
   const formatDisplay = (mins: number) => {
     if (mins >= 60) {
@@ -79,12 +35,11 @@ export default function DurationPicker({ value, onChange, disabled }: DurationPi
   return (
     <div className="flex flex-col items-center gap-4">
       {/* Stepper row */}
-      <div className="flex items-center gap-6">
-        {/* Minus button */}
+      <div className="flex items-center gap-5">
         <button
           onClick={decrement}
-          disabled={disabled || value <= MIN}
-          className="w-10 h-10 rounded-full flex items-center justify-center border border-lavender-200 dark:border-lavender-700 text-baltic-500 dark:text-baltic-400 hover:bg-lavender-50 dark:hover:bg-lavender-800 disabled:opacity-30 disabled:cursor-not-allowed transition-smooth"
+          disabled={disabled || value <= DURATION_MIN}
+          className="w-9 h-9 rounded-full flex items-center justify-center border border-lavender-200 text-baltic-500 hover:bg-lavender-50 hover:border-lavender-300 disabled:opacity-30 disabled:cursor-not-allowed transition-[background-color,border-color,transform] duration-150 ease-out press"
           aria-label="Decrease duration"
         >
           <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
@@ -92,31 +47,19 @@ export default function DurationPicker({ value, onChange, disabled }: DurationPi
           </svg>
         </button>
 
-        {/* Draggable number display */}
-        <div
-          onWheel={handleWheel}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          className={cn(
-            "select-none touch-none cursor-ns-resize flex flex-col items-center",
-            disabled && "pointer-events-none opacity-50"
-          )}
-        >
-          <span className="text-5xl font-light tracking-tight tabular-nums text-baltic-800 dark:text-baltic-100 leading-none">
+        <div className="flex flex-col items-center min-w-[4ch]">
+          <span className="text-5xl font-extralight tracking-tight tabular-nums text-baltic-800 leading-none">
             {formatDisplay(value)}
           </span>
           {value < 60 && (
-            <span className="text-xs text-steel-400 mt-1">min</span>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-steel-400 mt-2">minutes</span>
           )}
         </div>
 
-        {/* Plus button */}
         <button
           onClick={increment}
-          disabled={disabled || value >= MAX}
-          className="w-10 h-10 rounded-full flex items-center justify-center border border-lavender-200 dark:border-lavender-700 text-baltic-500 dark:text-baltic-400 hover:bg-lavender-50 dark:hover:bg-lavender-800 disabled:opacity-30 disabled:cursor-not-allowed transition-smooth"
+          disabled={disabled || value >= DURATION_MAX}
+          className="w-9 h-9 rounded-full flex items-center justify-center border border-lavender-200 text-baltic-500 hover:bg-lavender-50 hover:border-lavender-300 disabled:opacity-30 disabled:cursor-not-allowed transition-[background-color,border-color,transform] duration-150 ease-out press"
           aria-label="Increase duration"
         >
           <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
@@ -126,17 +69,18 @@ export default function DurationPicker({ value, onChange, disabled }: DurationPi
       </div>
 
       {/* Preset chips */}
-      <div className="flex items-center gap-1.5 flex-wrap justify-center">
+      <div className="flex items-center gap-1.5" role="group" aria-label="Duration presets">
         {PRESETS.map((p) => (
           <button
             key={p}
             onClick={() => onChange(p)}
             disabled={disabled}
+            aria-pressed={value === p}
             className={cn(
-              "px-2.5 py-1 rounded-md text-xs font-medium transition-smooth",
+              "px-3 py-1 rounded-full text-xs font-medium tabular-nums transition-[background-color,color] duration-150 ease-out press",
               value === p
-                ? "bg-baltic-100 text-baltic-700 dark:bg-baltic-800 dark:text-baltic-300"
-                : "text-steel-400 hover:text-baltic-600 hover:bg-lavender-50 dark:hover:bg-lavender-800 dark:hover:text-baltic-300"
+                ? "bg-baltic-100 text-baltic-700"
+                : "text-steel-400 hover:text-baltic-600 hover:bg-lavender-50"
             )}
           >
             {p >= 60 ? `${p / 60}h` : `${p}m`}

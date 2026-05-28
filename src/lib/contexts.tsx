@@ -24,7 +24,11 @@ function load<T>(key: string, fallback: T): T {
 
 function save(key: string, value: unknown) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* quota exceeded / privacy mode — accept the loss rather than crash */
+  }
 }
 
 // ─── Preferences Context (replaces Auth) ───
@@ -100,6 +104,8 @@ interface TasksState {
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   toggleComplete: (id: string) => void;
+  /** Move every task filed under `fromLabel` to `toLabel` (subject rename). */
+  reassignTasks: (fromLabel: string, toLabel: string) => void;
 }
 
 const TasksContext = createContext<TasksState | null>(null);
@@ -109,7 +115,7 @@ const SAMPLE_TASKS: Task[] = [
     id: "demo1",
     title: "Linear algebra problem set",
     description: "Complete exercises 4.1 through 4.8 on vector spaces and eigenvalues",
-    subject: "mathematics",
+    subject: "Mathematics",
     dueDate: new Date(Date.now() + 86400000).toISOString().split("T")[0],
     priority: "high",
     completed: false,
@@ -119,7 +125,7 @@ const SAMPLE_TASKS: Task[] = [
     id: "demo2",
     title: "Read chapter on Romanticism",
     description: "Focus on the transition from Neoclassicism and key authors of the period",
-    subject: "literature",
+    subject: "Literature",
     dueDate: new Date(Date.now() + 86400000 * 2).toISOString().split("T")[0],
     priority: "medium",
     completed: false,
@@ -129,7 +135,7 @@ const SAMPLE_TASKS: Task[] = [
     id: "demo3",
     title: "Lab report — Organic compounds",
     description: "Write up findings from Wednesday's spectroscopy lab session",
-    subject: "science",
+    subject: "Science",
     dueDate: new Date().toISOString().split("T")[0],
     priority: "high",
     completed: false,
@@ -139,7 +145,7 @@ const SAMPLE_TASKS: Task[] = [
     id: "demo4",
     title: "Microeconomics essay outline",
     description: "Draft thesis and outline for market failure case study essay",
-    subject: "economics",
+    subject: "Economics",
     dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split("T")[0],
     priority: "low",
     completed: false,
@@ -149,7 +155,7 @@ const SAMPLE_TASKS: Task[] = [
     id: "demo5",
     title: "Spanish verb conjugation practice",
     description: "Subjunctive mood irregular verbs — use flashcard deck",
-    subject: "languages",
+    subject: "Languages",
     dueDate: new Date(Date.now() + 86400000).toISOString().split("T")[0],
     priority: "medium",
     completed: false,
@@ -159,7 +165,7 @@ const SAMPLE_TASKS: Task[] = [
     id: "demo6",
     title: "History source analysis",
     description: "Analyze primary sources from the Industrial Revolution for Thursday's seminar",
-    subject: "history",
+    subject: "History",
     dueDate: new Date(Date.now() + 86400000 * 4).toISOString().split("T")[0],
     priority: "medium",
     completed: true,
@@ -205,10 +211,19 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const reassignTasks = useCallback((fromLabel: string, toLabel: string) => {
+    if (fromLabel === toLabel) return;
+    setTasks((prev) =>
+      prev.map((t) => (t.subject === fromLabel ? { ...t, subject: toLabel } : t))
+    );
+  }, []);
+
   if (!mounted) return null;
 
   return (
-    <TasksContext.Provider value={{ tasks, addTask, updateTask, deleteTask, toggleComplete }}>
+    <TasksContext.Provider
+      value={{ tasks, addTask, updateTask, deleteTask, toggleComplete, reassignTasks }}
+    >
       {children}
     </TasksContext.Provider>
   );
@@ -223,7 +238,7 @@ export function useTasks() {
 // ─── Focus Sessions Context ───
 interface FocusState {
   sessions: FocusSession[];
-  addSession: (subject: string, duration: number, reflection?: Reflection) => void;
+  addSession: (subject: string, duration: number, reflection?: Reflection, task?: string) => void;
   todayMinutes: number;
   weekMinutes: number;
   streak: number;
@@ -242,7 +257,7 @@ export function FocusProvider({ children }: { children: ReactNode }) {
     } else {
       const now = new Date();
       const sampleSessions: FocusSession[] = [];
-      const subjects = ["mathematics", "science", "literature", "economics", "history"];
+      const subjects = ["Mathematics", "Science", "Literature", "Economics", "History"];
       const durations = [45, 30, 25, 50, 25];
       const qualities = [4, 3, 3, 4, 2] as const;
       const notes = [
@@ -276,7 +291,7 @@ export function FocusProvider({ children }: { children: ReactNode }) {
     if (mounted) save("aim_sessions", sessions);
   }, [sessions, mounted]);
 
-  const addSession = useCallback((subject: string, duration: number, reflection?: Reflection) => {
+  const addSession = useCallback((subject: string, duration: number, reflection?: Reflection, task?: string) => {
     setSessions((prev) => [
       ...prev,
       {
@@ -285,6 +300,7 @@ export function FocusProvider({ children }: { children: ReactNode }) {
         duration,
         completedAt: new Date().toISOString(),
         ...(reflection ? { reflection } : {}),
+        ...(task && task.trim() ? { task: task.trim() } : {}),
       },
     ]);
   }, []);
@@ -333,6 +349,7 @@ export function useFocus() {
 interface SubjectsState {
   subjects: UserSubject[];
   addSubject: (label: string, color: string) => void;
+  updateSubject: (id: string, updates: Partial<Omit<UserSubject, "id">>) => void;
   deleteSubject: (id: string) => void;
   getSubject: (idOrLabel: string) => UserSubject | undefined;
 }
@@ -357,6 +374,15 @@ export function SubjectsProvider({ children }: { children: ReactNode }) {
     setSubjects((prev) => [...prev, { id: generateId(), label, color }]);
   }, []);
 
+  const updateSubject = useCallback(
+    (id: string, updates: Partial<Omit<UserSubject, "id">>) => {
+      setSubjects((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
+      );
+    },
+    []
+  );
+
   const deleteSubject = useCallback((id: string) => {
     setSubjects((prev) => prev.filter((s) => s.id !== id));
   }, []);
@@ -370,7 +396,9 @@ export function SubjectsProvider({ children }: { children: ReactNode }) {
   if (!mounted) return null;
 
   return (
-    <SubjectsContext.Provider value={{ subjects, addSubject, deleteSubject, getSubject }}>
+    <SubjectsContext.Provider
+      value={{ subjects, addSubject, updateSubject, deleteSubject, getSubject }}
+    >
       {children}
     </SubjectsContext.Provider>
   );

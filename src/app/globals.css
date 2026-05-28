@@ -462,9 +462,19 @@
     .progress-ring-circle,
     .dropdown-enter,
     .modal-backdrop-enter,
-    .modal-panel-enter {
+    .modal-panel-enter,
+    .focus-canvas-enter,
+    .focus-stage-enter,
+    .focus-tick-enter,
+    .focus-complete-settle,
+    .focus-complete-label,
+    .focus-label-swap,
+    .sweep-active {
       animation: none !important;
     }
+    .focus-tick-enter { opacity: 1 !important; }
+    .focus-complete-label { opacity: 1 !important; }
+    .focus-label-swap { opacity: 1 !important; }
     .paper-card {
       transition: none !important;
       transform: none !important;
@@ -472,6 +482,151 @@
     .press:active {
       transform: none !important;
     }
+    /* Journal entry cards keep their static tilt but drop animated movement */
+    .journal-card {
+      transition: none !important;
+    }
+  }
+
+  /* ────────────────────────────────────────────────────────
+     Focus canvas — light, quiet, geometric. One thing.
+     Light-only by design: no dark: variants, so the page reads the
+     same regardless of the app-wide theme toggle. Colors are drawn
+     from the shared palette (baltic / lavender / steel) so it sits
+     cohesively beside the dashboard and tasks pages.
+     ──────────────────────────────────────────────────────── */
+
+  .focus-canvas {
+    background-color: #eff1f5; /* baltic-50 — the app surface */
+    color: #262d40;            /* baltic-800 — app body text */
+  }
+
+  /* Canvas entrance — fades in once on mount so navigating in from
+     another page doesn't snap. */
+  @keyframes focus-canvas-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .focus-canvas-enter {
+    animation: focus-canvas-in 260ms var(--ease-out);
+  }
+
+  /* Stage swap — between idle / running / done / reflecting.
+     Subtle: opacity + tiny lift, nothing splashy. Per Emil:
+     entrances use ease-out, never scale-from-0. */
+  @keyframes focus-stage-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .focus-stage-enter {
+    animation: focus-stage-in 240ms var(--ease-out);
+  }
+
+  /* Focus surface — white panels (context pill, popover, reflection
+     card) that float over the topology with a soft paper shadow. */
+  .focus-panel {
+    background-color: rgba(255, 255, 255, 0.88);
+    border: 1px solid #c5c9d3; /* lavender-200 */
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow:
+      0 1px 2px rgba(38, 45, 64, 0.06),
+      0 6px 16px -8px rgba(38, 45, 64, 0.12);
+  }
+
+  /* Focus button — pill, matches the app's button palette. Press
+     feedback per Emil. */
+  .focus-btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-sm font-medium;
+    background-color: #ffffff;
+    color: #394460;            /* baltic-700 */
+    border: 1px solid #c5c9d3; /* lavender-200 */
+    transition: background-color 160ms var(--ease-out),
+                border-color 160ms var(--ease-out),
+                transform 160ms var(--ease-out);
+  }
+
+  .focus-btn:hover {
+    background-color: #f0f1f4; /* lavender-50 */
+    border-color: #a8aebd;     /* lavender-300 */
+  }
+
+  .focus-btn:active {
+    transform: scale(0.97);
+  }
+
+  .focus-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .focus-btn:disabled:active {
+    transform: none;
+  }
+
+  /* Primary action — the one filled button (Begin, Resume, Reflect,
+     Save). Baltic-600, same as the app's primary Button. */
+  .focus-btn-primary {
+    background-color: #4d5b80; /* baltic-600 */
+    color: #ffffff;
+    border-color: transparent;
+  }
+
+  .focus-btn-primary:hover {
+    background-color: #394460; /* baltic-700 */
+    border-color: transparent;
+  }
+
+  .focus-btn-primary:disabled {
+    background-color: #bfc6d9; /* baltic-200 */
+    color: #ffffff;
+  }
+
+  /* Tick reveal — used on timer face when a session starts.
+     Reduced motion strips this. */
+  @keyframes focus-tick-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .focus-tick-enter {
+    animation: focus-tick-in 80ms var(--ease-out) backwards;
+  }
+
+  /* Completion moment — the timer settles when a session ends. A calm scale
+     "landing" plus the label easing in (blur-bridged). Plays once on done. */
+  @keyframes focus-complete-settle {
+    0%   { transform: scale(0.97); }
+    55%  { transform: scale(1.01); }
+    100% { transform: scale(1); }
+  }
+  .focus-complete-settle {
+    animation: focus-complete-settle 620ms var(--ease-out) both;
+  }
+  @keyframes focus-complete-label {
+    from { opacity: 0; transform: translateY(3px); filter: blur(2px); }
+    to   { opacity: 1; transform: translateY(0);   filter: blur(0); }
+  }
+  .focus-complete-label {
+    animation: focus-complete-label 420ms var(--ease-out) 120ms both;
+  }
+
+  /* Context-pill label swap — blur-fades the new state label in so the
+     "Focusing → Paused → Complete" change bridges rather than snaps. */
+  @keyframes focus-label-swap {
+    from { opacity: 0; filter: blur(3px); }
+    to   { opacity: 1; filter: blur(0); }
+  }
+  .focus-label-swap {
+    animation: focus-label-swap 260ms var(--ease-out) both;
   }
 
   /* ─── Journal ruled-line background ─── */
@@ -497,6 +652,16 @@
 }
 
 @layer utilities {
+  /* Hide the scrollbar on a scroll container (e.g. the subject tab strip)
+     while keeping it scrollable by wheel/touch/keyboard. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Type scale — bolder, more playful */
   .text-display {
     @apply text-3xl font-bold tracking-tight;

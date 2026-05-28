@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { useFocus, useSubjects } from "@/lib/contexts";
 import { formatTime, getFormattedDate, getWeekday, cn } from "@/lib/utils";
 import QualityIndicator from "@/components/ui/QualityIndicator";
@@ -13,6 +13,16 @@ const TAPE_COLORS = [
   "bg-ash-300/60 dark:bg-ash-600/50",
   "bg-lavender-300/70 dark:bg-lavender-600/50",
 ];
+
+// Small uppercase section label — mirrors the dashboard/tasks CardEyebrow so
+// the journal's cards read in the same visual language.
+function CardEyebrow({ children }: { children: ReactNode }) {
+  return (
+    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-steel-500 dark:text-steel-400">
+      {children}
+    </p>
+  );
+}
 
 export default function JournalPage() {
   const { sessions } = useFocus();
@@ -117,54 +127,81 @@ export default function JournalPage() {
   }
 
   return (
-    <div className="relative space-y-8">
-      {/* ─── Decorative blobs ─── */}
+    <div className="desk-surface relative -mx-8 px-8 -mt-2 pt-2 pb-6">
+      {/* Two restrained desk-surface blobs — atmosphere, no work to do */}
       <div
         aria-hidden
-        className="absolute top-10 right-[-50px] w-56 h-56 blob-1 bg-cream-200/25 dark:bg-cream-800/15 float-slow pointer-events-none -z-10"
+        className="absolute top-32 right-[-80px] w-72 h-72 blob-1 bg-cream-200/25 dark:bg-cream-800/15 float-slow pointer-events-none -z-10"
       />
       <div
         aria-hidden
-        className="absolute top-[420px] left-[-70px] w-40 h-40 blob-3 bg-baltic-200/25 dark:bg-baltic-700/15 float-medium pointer-events-none -z-10"
-      />
-      <div
-        aria-hidden
-        className="absolute bottom-40 right-[5%] w-28 h-28 blob-2 bg-lavender-200/40 dark:bg-lavender-800/20 float-slow pointer-events-none -z-10"
+        className="absolute bottom-24 left-[-50px] w-32 h-32 blob-2 bg-baltic-200/25 dark:bg-baltic-700/15 float-medium pointer-events-none -z-10"
       />
 
-      {/* ─── SECTION 1: Header ─── */}
-      <div className="flex items-end justify-between flex-wrap gap-4">
-        <div>
-          <p className="inline-block px-3 py-1 rounded-full bg-lavender-100 dark:bg-lavender-800/60 text-xs font-semibold text-steel-500 dark:text-steel-300 mb-3">
-            {getWeekday()}
-          </p>
-          <h1 className="text-display text-baltic-800 dark:text-baltic-100">
-            Journal
-          </h1>
-          <p className="text-sm text-steel-500 dark:text-steel-400 mt-1">
-            {getFormattedDate()} · {sessions.length} session
-            {sessions.length !== 1 ? "s" : ""} recorded
-          </p>
+      {/* ── HEADER — orient + page-level status chip, matching dashboard/tasks ── */}
+      <header
+        className="mb-8 sticky-enter"
+        style={{ "--delay": "0ms" } as CSSProperties}
+      >
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-cream-100 dark:bg-cream-900/40 border border-cream-200 dark:border-cream-800/60">
+            <span className="w-1.5 h-1.5 rounded-full bg-cream-500" />
+            <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-cream-700 dark:text-cream-300">
+              {getWeekday()}
+            </span>
+          </span>
+          <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-steel-400">
+            {getFormattedDate()}
+          </span>
+          {sessions.length > 0 && (
+            <span
+              className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-baltic-50 dark:bg-baltic-900/40 border border-baltic-200/60 dark:border-baltic-800/60"
+              title={`${sessions.length} session${
+                sessions.length !== 1 ? "s" : ""
+              } recorded`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-baltic-500" />
+              <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-baltic-700 dark:text-baltic-300 tabular-nums">
+                {sessions.length} logged
+              </span>
+            </span>
+          )}
         </div>
-      </div>
+        <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-baltic-800 dark:text-baltic-100 leading-[1.1] pt-1">
+          <span className="highlighter">Journal</span>
+          <span className="text-baltic-600 dark:text-baltic-300">.</span>
+        </h1>
+        <p className="mt-3 text-sm text-steel-500 dark:text-steel-400 max-w-md">
+          {sessions.length > 0
+            ? "Every focus session, with what you worked on and how it felt."
+            : "Finish a focus session and it starts filling in here."}
+        </p>
+      </header>
 
-      {/* ─── SECTION 2: Weekly rhythm (heatmap) + summary ─── */}
+      {/* ── SECTION 2: Weekly rhythm (heatmap) + summary — paper-card so it
+            shares the dashboard's card system; baltic accent ties to the bars ── */}
       {sessions.length > 0 && (
-        <section className="rounded-3xl border-2 border-lavender-200 dark:border-lavender-800 bg-white dark:bg-lavender-900 p-6 shadow-sm">
-          {/* Title + helper */}
-          <div className="mb-1 flex items-baseline justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-3">
-              <span className="w-1.5 h-6 rounded-full bg-baltic-500" />
-              <h2 className="text-lg font-bold text-baltic-800 dark:text-baltic-100">
-                Your last 7 days of focus
-              </h2>
-            </div>
-            <p className="text-xs text-steel-400">
-              Each bar = total focus time that day
-            </p>
-          </div>
-          <p className="text-xs text-steel-500 dark:text-steel-400 ml-6 mb-6">
-            Tap any day to see how it compares.
+        <section
+          className="paper-card sticky-enter relative mb-8 px-6 pt-7 pb-6 border border-lavender-200/60 dark:border-lavender-800/60 overflow-hidden"
+          style={{ "--delay": "80ms" } as CSSProperties}
+        >
+          {/* Top accent — the only color that distinguishes one card from
+              another (light/dark inline, mirrors dashboard StickyCard) */}
+          <div
+            aria-hidden
+            className="absolute inset-x-0 top-0 h-1 dark:hidden"
+            style={{ backgroundColor: "#808eb3" }}
+          />
+          <div
+            aria-hidden
+            className="absolute inset-x-0 top-0 h-1 hidden dark:block"
+            style={{ backgroundColor: "#4d5b80" }}
+          />
+          <div className="relative z-10">
+          {/* Eyebrow + one honest line on how to read the chart */}
+          <CardEyebrow>Last 7 days</CardEyebrow>
+          <p className="mt-1.5 mb-6 text-xs text-steel-500 dark:text-steel-400">
+            Each bar is a day&rsquo;s focus total — today is highlighted.
           </p>
 
           {/* Chart area with y-axis labels */}
@@ -211,7 +248,7 @@ export default function JournalPage() {
                       {/* The bar itself */}
                       <div
                         className={cn(
-                          "w-full rounded-t-md transition-all duration-500 relative",
+                          "w-full rounded-t-md transition-[height,background-color] duration-500 relative",
                           day.isToday
                             ? "bg-baltic-600 dark:bg-baltic-400 ring-2 ring-baltic-200 dark:ring-baltic-700/60"
                             : day.minutes > 0
@@ -329,14 +366,18 @@ export default function JournalPage() {
               </div>
             </div>
           </div>
+          </div>
         </section>
       )}
 
       {/* ─── SECTION 3: Journal entries — polaroid style ─── */}
       {grouped.length > 0 ? (
-        <section className="space-y-10">
+        <section
+          className="space-y-10 sticky-enter"
+          style={{ "--delay": "160ms" } as CSSProperties}
+        >
           <div className="flex items-center gap-3 px-1">
-            <h2 className="text-[11px] font-bold uppercase tracking-[0.15em] text-baltic-600 dark:text-baltic-300">
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.22em] text-steel-500 dark:text-steel-400">
               Entries
             </h2>
             <div className="flex-1 h-px bg-lavender-200 dark:bg-lavender-800" />
@@ -375,9 +416,13 @@ export default function JournalPage() {
                     <div
                       key={session.id}
                       className={cn(
-                        "relative rounded-xl bg-white dark:bg-lavender-900 border-2 border-lavender-200 dark:border-lavender-800 p-5 pt-7 shadow-md hover:shadow-lg hover:rotate-0 hover:z-10 transition-all duration-300",
+                        "journal-card relative rounded-xl bg-white dark:bg-lavender-900 border-2 border-lavender-200 dark:border-lavender-800 p-5 pt-7 shadow-md hover:shadow-lg hover:rotate-0 hover:z-10",
                         rotation
                       )}
+                      style={{
+                        transition:
+                          "transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out)",
+                      }}
                     >
                       {/* Tape strip */}
                       <div
@@ -418,6 +463,13 @@ export default function JournalPage() {
                         </span>
                       </div>
 
+                      {/* What they worked on */}
+                      {session.task && (
+                        <p className="text-sm font-medium text-baltic-700 dark:text-baltic-200 mb-2 truncate">
+                          {session.task}
+                        </p>
+                      )}
+
                       {/* Quality */}
                       {session.reflection && (
                         <div className="flex items-center gap-2 mb-2">
@@ -451,7 +503,10 @@ export default function JournalPage() {
           ))}
         </section>
       ) : (
-        <section className="rounded-3xl border-2 border-dashed border-lavender-200 dark:border-lavender-800 bg-white dark:bg-lavender-900 py-16 text-center">
+        <section
+          className="sticky-enter rounded-2xl border border-dashed border-lavender-300 dark:border-lavender-700 bg-white dark:bg-lavender-900 py-16 text-center"
+          style={{ "--delay": "80ms" } as CSSProperties}
+        >
           <div className="flex justify-center gap-2 mb-4">
             <div className="w-5 h-5 rounded-full bg-lavender-200/60 dark:bg-lavender-700/30" />
             <div className="w-3 h-3 rounded-full bg-cream-200/60 dark:bg-cream-700/30 mt-2" />

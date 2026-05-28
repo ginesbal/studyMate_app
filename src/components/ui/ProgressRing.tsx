@@ -44,7 +44,7 @@ export default function ProgressRing({
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          className="transition-all duration-700 ease-out"
+          className="transition-[stroke-dashoffset] duration-700 ease-out"
           style={
             {
               "--circumference": circumference,

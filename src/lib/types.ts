@@ -22,6 +22,7 @@ export interface FocusSession {
   duration: number; // minutes
   completedAt: string;
   reflection?: Reflection;
+  task?: string; // what the user was working on, captured at setup
 }
 
 export const QUALITY_LEVELS: Record<FocusQuality, { label: string; description: string }> = {
@@ -71,6 +72,7 @@ export const DEFAULT_USER_SUBJECTS: UserSubject[] = [
   { id: "lit", label: "Literature", color: "#6e7891" },
   { id: "hist", label: "History", color: "#b9a23d" },
   { id: "lang", label: "Languages", color: "#4d5b80" },
+  { id: "econ", label: "Economics", color: "#586074" },
   { id: "design", label: "Design", color: "#91a989" },
 ];
 

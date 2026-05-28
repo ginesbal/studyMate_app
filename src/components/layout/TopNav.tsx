@@ -53,7 +53,7 @@ export default function TopNav() {
                 key={item.href}
                 onClick={() => router.push(item.href)}
                 className={cn(
-                  "px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200",
+                  "px-4 py-1.5 rounded-full text-sm font-medium transition-[background-color,color,box-shadow] duration-200",
                   active
                     ? "bg-baltic-600 text-white dark:bg-baltic-500 shadow-sm"
                     : "text-steel-500 hover:text-baltic-700 dark:text-steel-400 dark:hover:text-baltic-200"
@@ -71,7 +71,7 @@ export default function TopNav() {
         <button
           onClick={() => setMenuOpen((v) => !v)}
           className={cn(
-            "w-9 h-9 rounded-full bg-baltic-600 dark:bg-baltic-500 flex items-center justify-center text-sm font-semibold text-white transition-all duration-150 hover:scale-105 hover:shadow-md",
+            "w-9 h-9 rounded-full bg-baltic-600 dark:bg-baltic-500 flex items-center justify-center text-sm font-semibold text-white transition-[transform,box-shadow] duration-150 [@media(hover:hover)]:hover:scale-105 hover:shadow-md",
             menuOpen && "ring-2 ring-baltic-300 dark:ring-baltic-400 ring-offset-2 ring-offset-white dark:ring-offset-baltic-950"
           )}
           aria-label="Open profile menu"

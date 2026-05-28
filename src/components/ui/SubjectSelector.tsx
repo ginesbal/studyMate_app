@@ -77,17 +77,17 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
         onClick={() => { if (!disabled) setOpen(!open); }}
         disabled={disabled}
         className={cn(
-          "flex items-center gap-2 px-3 py-2 rounded-md text-sm border transition-smooth w-full max-w-[240px]",
+          "flex items-center gap-2 px-3.5 py-2 rounded-full text-sm w-full border bg-white transition-[background-color,border-color,transform] duration-150 ease-out press",
           open
-            ? "border-baltic-400 ring-2 ring-baltic-400/20 bg-white dark:bg-lavender-900"
-            : "border-lavender-200 dark:border-lavender-700 bg-white dark:bg-lavender-900 hover:border-lavender-300 dark:hover:border-lavender-600",
+            ? "border-baltic-400 ring-2 ring-baltic-400/20"
+            : "border-lavender-200 hover:border-lavender-300",
           disabled && "opacity-50 cursor-not-allowed"
         )}
       >
         {selected ? (
           <>
-            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: selected.color }} />
-            <span className="text-baltic-700 dark:text-baltic-300 truncate">{selected.label}</span>
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: selected.color }} />
+            <span className="text-baltic-700 truncate">{selected.label}</span>
           </>
         ) : (
           <span className="text-steel-400">Select subject</span>
@@ -99,7 +99,10 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute z-50 mt-1 w-64 bg-white dark:bg-lavender-900 border border-lavender-200 dark:border-lavender-700 rounded-lg shadow-lg overflow-hidden dropdown-enter">
+        <div
+          className="absolute z-50 mt-2 w-64 rounded-2xl overflow-hidden bg-white border border-lavender-200 shadow-[0_16px_36px_-12px_rgba(38,45,64,0.28)] dropdown-enter"
+          style={{ transformOrigin: "top left" }}
+        >
           {/* Subject list */}
           {subjects.length > 0 && (
             <div className="max-h-48 overflow-y-auto py-1">
@@ -107,31 +110,30 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
                 <div
                   key={sub.id}
                   className={cn(
-                    "flex items-center gap-2.5 px-3 py-2 cursor-pointer group transition-smooth",
+                    "flex items-center gap-2.5 px-3 py-2 cursor-pointer group transition-colors duration-150",
                     value === sub.label
-                      ? "bg-baltic-50 dark:bg-baltic-900/30"
-                      : "hover:bg-lavender-50 dark:hover:bg-lavender-800"
+                      ? "bg-baltic-50"
+                      : "hover:bg-lavender-50"
                   )}
                 >
                   <div
                     className="flex items-center gap-2.5 flex-1 min-w-0"
                     onClick={() => handleSelect(sub)}
                   >
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: sub.color }} />
+                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: sub.color }} />
                     <span className={cn(
                       "text-sm truncate",
                       value === sub.label
-                        ? "text-baltic-700 dark:text-baltic-300 font-medium"
-                        : "text-baltic-600 dark:text-baltic-400"
+                        ? "text-baltic-700 font-medium"
+                        : "text-baltic-600"
                     )}>
                       {sub.label}
                     </span>
                   </div>
-                  {/* Delete button */}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDelete(sub); }}
                     className={cn(
-                      "flex-shrink-0 p-0.5 rounded transition-smooth",
+                      "flex-shrink-0 p-0.5 rounded transition-colors duration-150",
                       confirmDelete === sub.id
                         ? "text-red-500 opacity-100"
                         : "text-steel-400 opacity-0 group-hover:opacity-100 hover:text-red-500"
@@ -147,10 +149,8 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
             </div>
           )}
 
-          {/* Divider */}
-          <div className="border-t border-lavender-100 dark:border-lavender-800" />
+          <div className="border-t border-lavender-100" />
 
-          {/* Add new subject */}
           {adding ? (
             <div className="p-3 space-y-3">
               <input
@@ -161,34 +161,32 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
                 onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") setAdding(false); }}
                 placeholder="Subject name"
                 maxLength={30}
-                className="w-full px-2.5 py-1.5 text-sm rounded-md border border-lavender-200 dark:border-lavender-700 bg-white dark:bg-lavender-900 text-baltic-800 dark:text-baltic-100 placeholder:text-steel-400 outline-none focus:ring-2 focus:ring-baltic-400/20 focus:border-baltic-400 transition-smooth"
+                className="w-full px-3 py-1.5 text-sm rounded-md border border-lavender-200 bg-white text-baltic-800 placeholder:text-steel-400 outline-none focus:ring-2 focus:ring-baltic-400/20 focus:border-baltic-400 transition-colors duration-150"
               />
-              {/* Color palette */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 {SUBJECT_COLORS.map((c) => (
                   <button
                     key={c}
                     onClick={() => setNewColor(c)}
                     className={cn(
-                      "w-5 h-5 rounded-full transition-smooth",
-                      newColor === c ? "ring-2 ring-offset-1 ring-baltic-400 dark:ring-offset-lavender-900" : "hover:scale-110"
+                      "w-5 h-5 rounded-full transition-transform duration-150",
+                      newColor === c ? "ring-2 ring-offset-2 ring-baltic-400 ring-offset-white" : "hover:scale-110"
                     )}
                     style={{ backgroundColor: c }}
                   />
                 ))}
               </div>
-              {/* Actions */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleAdd}
                   disabled={!newLabel.trim()}
-                  className="px-3 py-1 text-xs font-medium rounded-md bg-baltic-600 text-white hover:bg-baltic-700 disabled:opacity-40 disabled:cursor-not-allowed transition-smooth"
+                  className="px-3 py-1 text-xs font-medium rounded-full bg-baltic-600 text-white hover:bg-baltic-700 disabled:bg-baltic-200 disabled:cursor-not-allowed transition-colors duration-150 press"
                 >
                   Add
                 </button>
                 <button
                   onClick={() => { setAdding(false); setNewLabel(""); }}
-                  className="px-3 py-1 text-xs font-medium rounded-md text-steel-500 hover:text-baltic-600 hover:bg-lavender-50 dark:hover:bg-lavender-800 transition-smooth"
+                  className="px-3 py-1 text-xs font-medium rounded-full text-steel-500 hover:text-baltic-600 hover:bg-lavender-50 transition-colors duration-150 press"
                 >
                   Cancel
                 </button>
@@ -197,7 +195,7 @@ export default function SubjectSelector({ value, onChange, disabled }: SubjectSe
           ) : (
             <button
               onClick={() => setAdding(true)}
-              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-steel-500 hover:text-baltic-600 hover:bg-lavender-50 dark:hover:bg-lavender-800 transition-smooth"
+              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-steel-500 hover:text-baltic-600 hover:bg-lavender-50 transition-colors duration-150"
             >
               <svg width={12} height={12} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
                 <path d="M6 2v8M2 6h8" />
